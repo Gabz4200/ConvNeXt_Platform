@@ -298,6 +298,10 @@ class ConvNeXt(nn.Module):
         return tuple(patch_tokens)
 
 
+if hasattr(torch.serialization, "add_safe_globals"):
+    torch.serialization.add_safe_globals([ConvNeXt])
+
+
 convnext_sizes = {
     "tiny": dict(depths=[3, 3, 9, 3], dims=[96, 192, 384, 768]),
     "small": dict(depths=[3, 3, 27, 3], dims=[96, 192, 384, 768]),
@@ -311,6 +315,99 @@ def build_convnext(size: str = "tiny", **kwargs) -> ConvNeXt:
     if size not in convnext_sizes:
         raise ValueError(f"Unknown size '{size}'. Choose from: {list(convnext_sizes)}")
     return ConvNeXt(**convnext_sizes[size], **kwargs)
+
+
+TIMM_SUB_MAP = {
+    "conv_dw.weight": "dwconv.weight",
+    "conv_dw.bias": "dwconv.bias",
+    "norm.weight": "norm.weight",
+    "norm.bias": "norm.bias",
+    "mlp.fc1.weight": "pwconv1.weight",
+    "mlp.fc1.bias": "pwconv1.bias",
+    "mlp.fc2.weight": "pwconv2.weight",
+    "mlp.fc2.bias": "pwconv2.bias",
+    "gamma": "gamma",
+}
+
+FB_SUB_MAP = {
+    "depthwise_conv.weight": "dwconv.weight",
+    "depthwise_conv.bias": "dwconv.bias",
+    "layer_norm.weight": "norm.weight",
+    "layer_norm.bias": "norm.bias",
+    "pointwise_conv1.weight": "pwconv1.weight",
+    "pointwise_conv1.bias": "pwconv1.bias",
+    "pointwise_conv2.weight": "pwconv2.weight",
+    "pointwise_conv2.bias": "pwconv2.bias",
+    "gamma": "gamma",
+}
+
+
+def convert_dinov3_state_dict(sd: dict[str, Tensor]) -> dict[str, Tensor]:
+    """Convert state_dict keys from timm or HuggingFace/Facebook DINOv3 ConvNeXt format to our ConvNeXt format."""
+    mapped: dict[str, Tensor] = {}
+    if "stem.0.weight" in sd:
+        # Timm format
+        mapped["downsample_layers.0.0.weight"] = sd["stem.0.weight"]
+        mapped["downsample_layers.0.0.bias"] = sd["stem.0.bias"]
+        mapped["downsample_layers.0.1.weight"] = sd["stem.1.weight"]
+        mapped["downsample_layers.0.1.bias"] = sd["stem.1.bias"]
+        for s in range(1, 4):
+            mapped[f"downsample_layers.{s}.0.weight"] = sd[f"stages.{s}.downsample.0.weight"]
+            mapped[f"downsample_layers.{s}.0.bias"] = sd[f"stages.{s}.downsample.0.bias"]
+            mapped[f"downsample_layers.{s}.1.weight"] = sd[f"stages.{s}.downsample.1.weight"]
+            mapped[f"downsample_layers.{s}.1.bias"] = sd[f"stages.{s}.downsample.1.bias"]
+        for k, v in sd.items():
+            if k.startswith("stages."):
+                parts = k.split(".")
+                if "blocks" in parts:
+                    s, b = parts[1], parts[3]
+                    sub = ".".join(parts[4:])
+                    if sub in TIMM_SUB_MAP:
+                        mapped[f"stages.{s}.{b}.{TIMM_SUB_MAP[sub]}"] = v
+        if "head.norm.weight" in sd:
+            mapped["norm.weight"] = sd["head.norm.weight"]
+            mapped["norm.bias"] = sd["head.norm.bias"]
+            mapped["norms.3.weight"] = sd["head.norm.weight"]
+            mapped["norms.3.bias"] = sd["head.norm.bias"]
+    elif "stages.0.downsample_layers.0.weight" in sd:
+        # Facebook / HF format
+        for k, v in sd.items():
+            if k.startswith("stages."):
+                parts = k.split(".")
+                s = parts[1]
+                if parts[2] == "downsample_layers":
+                    idx, sub = parts[3], parts[4]
+                    mapped[f"downsample_layers.{s}.{idx}.{sub}"] = v
+                elif parts[2] == "layers":
+                    b, sub = parts[3], parts[4]
+                    suffix = parts[5] if len(parts) > 5 else ""
+                    key_name = f"{sub}.{suffix}" if suffix else sub
+                    if key_name in FB_SUB_MAP:
+                        mapped[f"stages.{s}.{b}.{FB_SUB_MAP[key_name]}"] = v
+            elif k == "layer_norm.weight":
+                mapped["norm.weight"] = v
+                mapped["norms.3.weight"] = v
+            elif k == "layer_norm.bias":
+                mapped["norm.bias"] = v
+                mapped["norms.3.bias"] = v
+    else:
+        mapped = sd
+
+    return mapped
+
+
+def load_dinov3_weights(
+    model: ConvNeXt, repo_id: str = "timm/convnext_tiny.dinov3_lvd1689m"
+) -> ConvNeXt:
+    """Download DINOv3 ConvNeXt weights from HF Hub and load them into model."""
+    import safetensors.torch as st
+    from huggingface_hub import hf_hub_download
+
+    weight_file = hf_hub_download(repo_id=repo_id, filename="model.safetensors")
+    sd = st.load_file(weight_file)
+    mapped_sd = convert_dinov3_state_dict(sd)
+    model.load_state_dict(mapped_sd, strict=False)
+    return model
 
 
 if __name__ == "__main__":
