@@ -1,0 +1,26 @@
+_target_: src.models.convnext_module.ConvNeXtLitModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 4e-3
+  weight_decay: 0.05
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  _partial_: true
+  T_max: ${trainer.max_epochs}
+
+# ConvNeXt-Tiny backbone. Input must be at least 32x32 (stem stride-4 + three
+# 2x downsampling stages = 32x total spatial reduction).
+net:
+  _target_: src.models.components.convnext.ConvNeXt
+  in_chans: 3
+  num_classes: 10
+  depths: [3, 3, 9, 3]
+  dims: [96, 192, 384, 768]
+  drop_path_rate: 0.1
+  layer_scale_init_value: 1.0e-6
+
+# compile model for faster training with pytorch 2.0
+compile: false
