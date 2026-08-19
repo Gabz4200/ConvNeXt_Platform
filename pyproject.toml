@@ -29,6 +29,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pre-commit",
+    "pyrefly",
     "pytest",
     "setuptools",
 ]
@@ -55,12 +56,12 @@ filterwarnings = [
   "ignore::DeprecationWarning",
   "ignore::UserWarning",
 ]
-log_cli = "True"
+log_cli = true
 markers = [
   "slow: slow tests",
 ]
 minversion = "6.0"
-testpaths = "tests/"
+testpaths = ["tests/"]
 
 [tool.coverage.report]
 exclude_lines = [
@@ -79,3 +80,8 @@ explicit = true
 torch = { index = "pytorch" }
 torchvision = { index = "pytorch" }
 torchao = { index = "pytorch" }
+
+[dependency-groups]
+dev = [
+    "pyrefly>=1.2.0",
+]

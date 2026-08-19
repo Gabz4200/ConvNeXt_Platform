@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 import torch
 from lightning import LightningDataModule
@@ -55,7 +55,7 @@ class MNISTDataModule(LightningDataModule):
     def __init__(
         self,
         data_dir: str = "data/",
-        train_val_test_split: Tuple[int, int, int] = (55_000, 5_000, 10_000),
+        train_val_test_split: tuple[int, int, int] = (55_000, 5_000, 10_000),
         batch_size: int = 64,
         num_workers: int = 0,
         pin_memory: bool = False,
@@ -79,9 +79,9 @@ class MNISTDataModule(LightningDataModule):
             [transforms.ToTensor(), transforms.Normalize((0.1307,), (0.3081,))]
         )
 
-        self.data_train: Optional[Dataset] = None
-        self.data_val: Optional[Dataset] = None
-        self.data_test: Optional[Dataset] = None
+        self.data_train: Dataset | None = None
+        self.data_val: Dataset | None = None
+        self.data_test: Dataset | None = None
 
         self.batch_size_per_device = batch_size
 
@@ -104,7 +104,7 @@ class MNISTDataModule(LightningDataModule):
         MNIST(self.hparams.data_dir, train=True, download=True)
         MNIST(self.hparams.data_dir, train=False, download=True)
 
-    def setup(self, stage: Optional[str] = None) -> None:
+    def setup(self, stage: str | None = None) -> None:
         """Load data. Set variables: `self.data_train`, `self.data_val`, `self.data_test`.
 
         This method is called by Lightning before `trainer.fit()`, `trainer.validate()`, `trainer.test()`, and
@@ -120,12 +120,18 @@ class MNISTDataModule(LightningDataModule):
                 raise RuntimeError(
                     f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
                 )
-            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
+            self.batch_size_per_device = (
+                self.hparams.batch_size // self.trainer.world_size
+            )
 
         # load and split datasets only if not loaded already
-        if not self.data_train and not self.data_val and not self.data_test:
-            trainset = MNIST(self.hparams.data_dir, train=True, transform=self.transforms)
-            testset = MNIST(self.hparams.data_dir, train=False, transform=self.transforms)
+        if self.data_train is None and self.data_val is None and self.data_test is None:
+            trainset = MNIST(
+                self.hparams.data_dir, train=True, transform=self.transforms
+            )
+            testset = MNIST(
+                self.hparams.data_dir, train=False, transform=self.transforms
+            )
             dataset = ConcatDataset(datasets=[trainset, testset])
             self.data_train, self.data_val, self.data_test = random_split(
                 dataset=dataset,
@@ -138,6 +144,9 @@ class MNISTDataModule(LightningDataModule):
 
         :return: The train dataloader.
         """
+        if self.data_train is None:
+            self.setup("fit")
+        assert self.data_train is not None, "data_train must be set before train_dataloader()"
         return DataLoader(
             dataset=self.data_train,
             batch_size=self.batch_size_per_device,
@@ -151,6 +160,9 @@ class MNISTDataModule(LightningDataModule):
 
         :return: The validation dataloader.
         """
+        if self.data_val is None:
+            self.setup("fit")
+        assert self.data_val is not None, "data_val must be set before val_dataloader()"
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.batch_size_per_device,
@@ -164,6 +176,9 @@ class MNISTDataModule(LightningDataModule):
 
         :return: The test dataloader.
         """
+        if self.data_test is None:
+            self.setup("test")
+        assert self.data_test is not None, "data_test must be set before test_dataloader()"
         return DataLoader(
             dataset=self.data_test,
             batch_size=self.batch_size_per_device,
@@ -172,29 +187,27 @@ class MNISTDataModule(LightningDataModule):
             shuffle=False,
         )
 
-    def teardown(self, stage: Optional[str] = None) -> None:
+    def teardown(self, stage: str | None = None) -> None:
         """Lightning hook for cleaning up after `trainer.fit()`, `trainer.validate()`,
         `trainer.test()`, and `trainer.predict()`.
 
         :param stage: The stage being torn down. Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
             Defaults to ``None``.
         """
-        pass
 
-    def state_dict(self) -> Dict[Any, Any]:
+    def state_dict(self) -> dict[Any, Any]:
         """Called when saving a checkpoint. Implement to generate and save the datamodule state.
 
         :return: A dictionary containing the datamodule state that you want to save.
         """
         return {}
 
-    def load_state_dict(self, state_dict: Dict[str, Any]) -> None:
+    def load_state_dict(self, state_dict: dict[str, Any]) -> None:
         """Called when loading a checkpoint. Implement to reload datamodule state given datamodule
         `state_dict()`.
 
         :param state_dict: The datamodule state returned by `self.state_dict()`.
         """
-        pass
 
 
 if __name__ == "__main__":

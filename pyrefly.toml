@@ -1,0 +1,41 @@
+search-path = [
+  ".",
+]
+
+project-includes = [
+  "**/*.py",
+  "**/*.pyi",
+]
+
+project-excludes = [
+  ".venv/**",
+  "data/**",
+  "logs/**",
+  "notebooks/**",
+  "**/__pycache__/**",
+  ".git/**",
+]
+
+[[sub-config]]
+matches = "src/**/*.py"
+
+[sub-config.errors]
+implicit-import = false
+implicit-any = false
+missing-attribute = false
+bad-override-param-name = false
+bad-return = false
+unannotated-return = true
+unannotated-parameter = true
+
+[[sub-config]]
+matches = "tests/**/*.py"
+
+[sub-config.errors]
+implicit-import = false
+implicit-any = false
+missing-attribute = false
+bad-override-param-name = false
+bad-return = false
+unannotated-return = false
+unannotated-parameter = false

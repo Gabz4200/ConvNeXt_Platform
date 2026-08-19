@@ -1,4 +1,7 @@
+from typing import Any
+
 import pytest
+import timm
 import torch
 import torchvision.transforms as T
 from datasets import load_dataset
@@ -80,8 +83,6 @@ def test_dinov3_convnext_timm_equivalence() -> None:
     Evaluates on images from brandonyang/ricl_dinov3_embeds and verifies max absolute difference
     between our model features and timm reference features is below tolerance (1e-4).
     """
-    import timm
-
     # 1. Load dataset sample
     ds = load_dataset("brandonyang/ricl_dinov3_embeds", split="train", streaming=True)
     sample = next(iter(ds))
@@ -103,11 +104,11 @@ def test_dinov3_convnext_timm_equivalence() -> None:
     )
 
     # 2. Reference timm model
-    m_timm = timm.create_model("hf-hub:timm/convnext_tiny.dinov3_lvd1689m", pretrained=True)
+    m_timm: Any = timm.create_model("hf-hub:timm/convnext_tiny.dinov3_lvd1689m", pretrained=True)
     m_timm.eval()
     with torch.no_grad():
         feat_timm = m_timm.forward_features(imgs)
-        pooled_timm = m_timm.forward_head(feat_timm, pre_logits=True)  # type: ignore[operator]
+        pooled_timm = m_timm.forward_head(feat_timm, pre_logits=True)
 
     # 3. Our ConvNeXt model loaded with weights
     our_model = build_convnext("tiny", num_classes=0)

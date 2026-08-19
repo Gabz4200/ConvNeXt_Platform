@@ -19,12 +19,13 @@ def test_mnist_datamodule(batch_size: int) -> None:
     dm = MNISTDataModule(data_dir=data_dir, batch_size=batch_size)
     dm.prepare_data()
 
-    assert not dm.data_train and not dm.data_val and not dm.data_test
+    assert dm.data_train is None and dm.data_val is None and dm.data_test is None
     assert Path(data_dir, "MNIST").exists()
     assert Path(data_dir, "MNIST", "raw").exists()
 
     dm.setup()
-    assert dm.data_train and dm.data_val and dm.data_test
+    assert dm.data_train is not None and dm.data_val is not None and dm.data_test is not None
+    assert hasattr(dm.data_train, "__len__") and hasattr(dm.data_val, "__len__") and hasattr(dm.data_test, "__len__")
     assert dm.train_dataloader() and dm.val_dataloader() and dm.test_dataloader()
 
     num_datapoints = len(dm.data_train) + len(dm.data_val) + len(dm.data_test)

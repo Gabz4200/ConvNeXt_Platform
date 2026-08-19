@@ -1,6 +1,6 @@
 """ConvNeXt LightningModule for image classification."""
 
-from typing import Any
+from typing import Any, cast
 
 import torch
 from lightning import LightningModule
@@ -181,7 +181,7 @@ class ConvNeXtLitModule(LightningModule):
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
         if self.hparams.compile and stage == "fit":
-            self.net = torch.compile(self.net)
+            self.net = cast(torch.nn.Module, torch.compile(self.net))
 
     def configure_optimizers(self) -> Any:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
@@ -190,7 +190,8 @@ class ConvNeXtLitModule(LightningModule):
         """
         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
         if self.hparams.scheduler is not None:
-            lr_scheduler = self.hparams.scheduler(optimizer=optimizer)
+            scheduler_factory: Any = self.hparams.scheduler
+            lr_scheduler = scheduler_factory(optimizer=optimizer)
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {

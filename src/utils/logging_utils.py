@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any
 
 from lightning_utilities.core.rank_zero import rank_zero_only
 from omegaconf import OmegaConf
@@ -9,7 +9,7 @@ log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
 
 @rank_zero_only
-def log_hyperparameters(object_dict: Dict[str, Any]) -> None:
+def log_hyperparameters(object_dict: dict[str, Any]) -> None:
     """Controls which config parts are saved by Lightning loggers.
 
     Additionally saves:
@@ -23,6 +23,9 @@ def log_hyperparameters(object_dict: Dict[str, Any]) -> None:
     hparams = {}
 
     cfg = OmegaConf.to_container(object_dict["cfg"])
+    if not isinstance(cfg, dict):
+        log.warning("Config is not a dict! Skipping hyperparameter logging...")
+        return
     model = object_dict["model"]
     trainer = object_dict["trainer"]
 

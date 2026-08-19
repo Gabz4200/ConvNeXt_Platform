@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, cast
 
 import torch
 from lightning import LightningModule
@@ -43,7 +43,7 @@ class MNISTLitModule(LightningModule):
         self,
         net: torch.nn.Module,
         optimizer: torch.optim.Optimizer,
-        scheduler: torch.optim.lr_scheduler,
+        scheduler: Any,
         compile: bool,
     ) -> None:
         """Initialize a `MNISTLitModule`.
@@ -93,8 +93,8 @@ class MNISTLitModule(LightningModule):
         self.val_acc_best.reset()
 
     def model_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor]
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        self, batch: tuple[torch.Tensor, torch.Tensor]
+    ) -> tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Perform a single model step on a batch of data.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target labels.
@@ -111,7 +111,7 @@ class MNISTLitModule(LightningModule):
         return loss, preds, y
 
     def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         """Perform a single training step on a batch of data from the training set.
 
@@ -137,10 +137,9 @@ class MNISTLitModule(LightningModule):
 
     def on_train_epoch_end(self) -> None:
         "Lightning hook that is called when a training epoch ends."
-        pass
 
     def validation_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
         """Perform a single validation step on a batch of data from the validation set.
 
@@ -167,7 +166,7 @@ class MNISTLitModule(LightningModule):
         )
 
     def test_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
+        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
         """Perform a single test step on a batch of data from the test set.
 
@@ -187,7 +186,6 @@ class MNISTLitModule(LightningModule):
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
-        pass
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -199,9 +197,9 @@ class MNISTLitModule(LightningModule):
         :param stage: Either `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
         if self.hparams.compile and stage == "fit":
-            self.net = torch.compile(self.net)
+            self.net = cast(torch.nn.Module, torch.compile(self.net))
 
-    def configure_optimizers(self) -> Dict[str, Any]:
+    def configure_optimizers(self) -> Any:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
         Normally you'd need one. But in the case of GANs or similar you might have multiple.
 
@@ -212,7 +210,8 @@ class MNISTLitModule(LightningModule):
         """
         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
         if self.hparams.scheduler is not None:
-            scheduler = self.hparams.scheduler(optimizer=optimizer)
+            scheduler_factory: Any = self.hparams.scheduler
+            scheduler = scheduler_factory(optimizer=optimizer)
             return {
                 "optimizer": optimizer,
                 "lr_scheduler": {
@@ -226,4 +225,4 @@ class MNISTLitModule(LightningModule):
 
 
 if __name__ == "__main__":
-    _ = MNISTLitModule(None, None, None, None)
+    _ = MNISTLitModule(None, None, None, False)  # type: ignore[arg-type]

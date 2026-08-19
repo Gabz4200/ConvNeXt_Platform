@@ -1,12 +1,47 @@
 """This file prepares config fixtures for other tests."""
 
+import os
+import typing
 from pathlib import Path
 
+import omegaconf
+import omegaconf.base
+import omegaconf.nodes
 import pytest
 import rootutils
+import torch
+import torchmetrics
 from hydra import compose, initialize
 from hydra.core.global_hydra import GlobalHydra
 from omegaconf import DictConfig, open_dict
+
+os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
+if hasattr(torch.serialization, "add_safe_globals"):
+    torch.serialization.add_safe_globals([
+        torch.nn.modules.container.ModuleList,
+        torch.nn.modules.container.Sequential,
+        torch.nn.modules.conv.Conv2d,
+        torch.nn.modules.linear.Linear,
+        torch.nn.modules.linear.Identity,
+        torch.nn.modules.normalization.LayerNorm,
+        torch.nn.modules.activation.GELU,
+        torch.nn.modules.loss.CrossEntropyLoss,
+        omegaconf.listconfig.ListConfig,
+        omegaconf.dictconfig.DictConfig,
+        omegaconf.base.ContainerMetadata,
+        omegaconf.base.Metadata,
+        omegaconf.nodes.AnyNode,
+        omegaconf.nodes.StringNode,
+        omegaconf.nodes.IntegerNode,
+        omegaconf.nodes.FloatNode,
+        omegaconf.nodes.BooleanNode,
+        torchmetrics.classification.accuracy.Accuracy,
+        torchmetrics.classification.accuracy.MulticlassAccuracy,
+        torchmetrics.aggregation.MeanMetric,
+        torchmetrics.aggregation.MaxMetric,
+        typing.Any,
+    ])
 
 
 @pytest.fixture(scope="package")

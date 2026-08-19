@@ -42,7 +42,7 @@ class SimpleDenseNet(nn.Module):
         :param x: The input tensor.
         :return: A tensor of predictions.
         """
-        batch_size, channels, width, height = x.size()
+        batch_size, _, _, _ = x.size()
 
         # (batch, 1, width, height) -> (batch, 1*width*height)
         x = x.view(batch_size, -1)

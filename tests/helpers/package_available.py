@@ -1,7 +1,7 @@
 import platform
 from importlib.metadata import PackageNotFoundError, distribution
 
-from lightning.fabric.accelerators import TPUAccelerator
+from lightning.pytorch import accelerators
 
 
 def _package_available(package_name: str) -> bool:
@@ -18,7 +18,11 @@ def _package_available(package_name: str) -> bool:
     return True
 
 
-_TPU_AVAILABLE = TPUAccelerator.is_available()
+_TPU_AVAILABLE = (
+    accelerators.TPUAccelerator.is_available()  # type: ignore[attr-defined]
+    if hasattr(accelerators, "TPUAccelerator")
+    else False
+)
 
 _IS_WINDOWS = platform.system() == "Windows"
 
