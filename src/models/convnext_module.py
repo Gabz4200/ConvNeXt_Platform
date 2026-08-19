@@ -47,7 +47,7 @@ class ConvNeXtLitModule(LightningModule):
     def __init__(
         self,
         net: torch.nn.Module,
-        optimizer: torch.optim.Optimizer,
+        optimizer: torch.optim.Optimizer | None,
         scheduler: Any,
         compile: bool,
     ) -> None:
@@ -64,25 +64,30 @@ class ConvNeXtLitModule(LightningModule):
         self.net = net
 
         # Infer num_classes from the backbone head so the config has a single source of truth.
-        num_classes = net.head.out_features if isinstance(net.head, torch.nn.Linear) else 10
+        # An Identity head (num_classes=0) puts the module in feature-extraction mode.
+        self.is_classifier = isinstance(net.head, torch.nn.Linear)
+        self.embed_dim = cast(int, net.embed_dim)
+        self.num_classes = cast(int, net.head.out_features) if self.is_classifier else 0
 
-        self.criterion = torch.nn.CrossEntropyLoss()
+        if self.is_classifier:
+            self.criterion = torch.nn.CrossEntropyLoss()
 
-        self.train_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.val_acc = Accuracy(task="multiclass", num_classes=num_classes)
-        self.test_acc = Accuracy(task="multiclass", num_classes=num_classes)
+            self.train_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
+            self.val_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
+            self.test_acc = Accuracy(task="multiclass", num_classes=self.num_classes)
 
-        self.train_loss = MeanMetric()
-        self.val_loss = MeanMetric()
-        self.test_loss = MeanMetric()
+            self.train_loss = MeanMetric()
+            self.val_loss = MeanMetric()
+            self.test_loss = MeanMetric()
 
-        self.val_acc_best = MaxMetric()
+            self.val_acc_best = MaxMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Perform a forward pass through the model `self.net`.
 
         :param x: A tensor of images.
-        :return: A tensor of logits.
+        :return: A tensor of class logits (classification mode) or embeddings (feature-extraction
+            mode).
         """
         return self.net(x)
 
@@ -104,6 +109,11 @@ class ConvNeXtLitModule(LightningModule):
             - A tensor of predictions.
             - A tensor of target labels.
         """
+        if not self.is_classifier:
+            raise RuntimeError(
+                "model_step requires a classification head (num_classes > 0). "
+                "Feature-extraction mode only supports predict_step."
+            )
         x, y = batch
         logits = self.forward(x)
         loss = self.criterion(logits, y)
@@ -124,8 +134,12 @@ class ConvNeXtLitModule(LightningModule):
 
         self.train_loss(loss)
         self.train_acc(preds, targets)
-        self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
-        self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
+        self.log(
+            "train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True
+        )
 
         return loss
 
@@ -152,9 +166,13 @@ class ConvNeXtLitModule(LightningModule):
         """Lightning hook that is called when a validation epoch ends."""
         acc = self.val_acc.compute()
         self.val_acc_best(acc)
-        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
+        self.log(
+            "val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True
+        )
 
-    def test_step(self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int) -> None:
+    def test_step(
+        self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int
+    ) -> None:
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -165,11 +183,29 @@ class ConvNeXtLitModule(LightningModule):
 
         self.test_loss(loss)
         self.test_acc(preds, targets)
-        self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log(
+            "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
+        )
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_test_epoch_end(self) -> None:
         """Lightning hook that is called when a test epoch ends."""
+
+    def predict_step(
+        self,
+        batch: torch.Tensor | tuple[torch.Tensor, torch.Tensor],
+        _batch_idx: int,
+    ) -> torch.Tensor:
+        """Run a single inference step through `Trainer.predict`.
+
+        Returns embeddings in feature-extraction mode (num_classes=0) and class logits otherwise.
+
+        :param batch: A batch of images, optionally paired with target labels.
+        :param _batch_idx: The index of the current batch.
+        :return: A tensor of features or logits.
+        """
+        x = batch[0] if isinstance(batch, (tuple, list)) else batch
+        return self.forward(x)
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,

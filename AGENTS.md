@@ -8,6 +8,14 @@ Context and technical guidelines for AI coding agents working in the **ConvNeXt 
 
 **ConvNeXt Platform** is a research and training codebase for training ConvNeXt vision backbones and visual representations for **platformer games** (reinforcement learning & vision-based control), featuring DINOv3-compatible pre-trained weight loading, intermediate layer feature extraction, and PyTorch Lightning + Hydra training workflows.
 
+> **MANDATORY RULE — PyTorch Lightning, not plain PyTorch:** Every training, evaluation, and inference
+> path in this codebase MUST be driven by PyTorch Lightning (`LightningModule` + `Trainer`). Never
+> write manual training loops, raw `torch.no_grad()` inference pipelines, or bare `optimizer.step()`
+> code. Pure-`nn.Module` backbones (e.g. `src/models/components/convnext.py`) exist only as model
+> definitions and MUST always be wrapped in a `LightningModule` (e.g. `ConvNeXtLitModule`) and run
+> through `Trainer.fit`, `Trainer.test`, or `Trainer.predict`. Plain PyTorch is allowed only for
+> (a) defining `nn.Module` layer logic and (b) state-dict weight loading/saving I/O.
+
 ### Core Tech Stack
 - **Deep Learning Framework:** PyTorch >= 2.0.0, PyTorch Lightning >= 2.0.0
 - **Configuration & CLI:** Hydra 1.3 (`hydra-core`, `hydra-colorlog`, `hydra-optuna-sweeper`), OmegaConf
@@ -28,7 +36,7 @@ ConvNeXt_Platform/
 ├── configs/                    # Hydra configuration hierarchy
 │   ├── train.yaml              # Main training config entrypoint (defaults: data=cifar10, model=convnext)
 │   ├── eval.yaml               # Main evaluation config entrypoint
-│   ├── model/                  # Model configurations (convnext.yaml, mnist.yaml)
+│   ├── model/                  # Model configurations (convnext.yaml, convnext_embeds.yaml, mnist.yaml)
 │   ├── data/                   # DataModule configs (cifar10.yaml, mnist.yaml)
 │   ├── trainer/                # Trainer configs (default.yaml, cpu.yaml, gpu.yaml, ddp.yaml)
 │   ├── callbacks/              # Lightning callback configs (model_checkpoint.yaml, early_stopping.yaml)
@@ -40,7 +48,7 @@ ConvNeXt_Platform/
 │   ├── train.py                # Main training entrypoint script (@hydra.main train.yaml)
 │   ├── eval.py                 # Main evaluation entrypoint script (@hydra.main eval.yaml)
 │   ├── models/
-│   │   ├── convnext_module.py  # ConvNeXtLitModule (LightningModule for classification)
+│   │   ├── convnext_module.py  # ConvNeXtLitModule (LightningModule: classification + feature extraction)
 │   │   ├── mnist_module.py     # MNISTLitModule (baseline reference)
 │   │   └── components/
 │   │       ├── convnext.py     # Pure PyTorch ConvNeXt (DINOv3 weights & intermediate layers)
@@ -202,6 +210,7 @@ make format
 2. **Single Source of Truth:** Infer dependent parameters (e.g. `num_classes` in `ConvNeXtLitModule` inferred from `net.head.out_features`) rather than duplicating them across configs.
 3. **No Dead Comments / Obvious Restatements:** Avoid narrative storytelling, decorative ASCII separators, or comments that merely restate symbol names.
 4. **Hydra Interpolation:** Tie scheduler lengths dynamically to trainer configurations using variable interpolation (`T_max: ${trainer.max_epochs}`).
+5. **PyTorch Lightning, Not Plain PyTorch:** Drive ALL training, evaluation, and inference through Lightning (`LightningModule` + `Trainer`). No manual training loops, raw `torch.no_grad()` inference, or bare `optimizer.step()` pipelines. Wrap pure-`nn.Module` backbones in a `LightningModule` and route inference through `Trainer.predict` (e.g. DINOv3 feature extraction via `ConvNeXtLitModule.predict_step`).
 
 ---
 
@@ -214,7 +223,8 @@ make format
 - Weight loading utilities (`load_dinov3_weights`) map both `timm` format and Facebook HF format checkpoints to the internal module structure.
 
 ### 2. LightningModule (`src/models/convnext_module.py`)
-- Standardized lifecycle: `model_step`, `training_step`, `validation_step`, `test_step`, and `configure_optimizers`.
+- Standardized lifecycle: `model_step`, `training_step`, `validation_step`, `test_step`, `predict_step`, and `configure_optimizers`.
+- Two modes inferred from the backbone head: classification (`net.head` is `nn.Linear`) and feature extraction (`net.head` is `nn.Identity`, i.e. `num_classes=0`). Feature-extraction mode runs DINOv3-compatible embedding inference through `predict_step` / `Trainer.predict` (see `configs/model/convnext_embeds.yaml`).
 - Tracks loss via `MeanMetric`, accuracy via `Accuracy(task="multiclass", num_classes=...)`, and peak validation accuracy via `MaxMetric`.
 - Supports `torch.compile` during `setup(stage)` when enabled in config (`compile: true`).
 
