@@ -7,37 +7,7 @@ from torchmetrics.classification.accuracy import Accuracy
 
 
 class MNISTLitModule(LightningModule):
-    """Example of a `LightningModule` for MNIST classification.
-
-    A `LightningModule` implements 8 key methods:
-
-    ```python
-    def __init__(self):
-    # Define initialization code here.
-
-    def setup(self, stage):
-    # Things to setup before each stage, 'fit', 'validate', 'test', 'predict'.
-    # This hook is called on every process when using DDP.
-
-    def training_step(self, batch, batch_idx):
-    # The complete training step.
-
-    def validation_step(self, batch, batch_idx):
-    # The complete validation step.
-
-    def test_step(self, batch, batch_idx):
-    # The complete test step.
-
-    def predict_step(self, batch, batch_idx):
-    # The complete predict step.
-
-    def configure_optimizers(self):
-    # Define and configure optimizers and LR schedulers.
-    ```
-
-    Docs:
-        https://lightning.ai/docs/pytorch/latest/common/lightning_module.html
-    """
+    """Example `LightningModule` for MNIST classification."""
 
     def __init__(
         self,
@@ -51,29 +21,24 @@ class MNISTLitModule(LightningModule):
         :param net: The model to train.
         :param optimizer: The optimizer to use for training.
         :param scheduler: The learning rate scheduler to use for training.
+        :param compile: Whether to compile the model with `torch.compile`.
         """
         super().__init__()
 
-        # this line allows to access init params with 'self.hparams' attribute
-        # also ensures init params will be stored in ckpt
         self.save_hyperparameters(logger=False)
 
         self.net = net
 
-        # loss function
         self.criterion = torch.nn.CrossEntropyLoss()
 
-        # metric objects for calculating and averaging accuracy across batches
         self.train_acc = Accuracy(task="multiclass", num_classes=10)
         self.val_acc = Accuracy(task="multiclass", num_classes=10)
         self.test_acc = Accuracy(task="multiclass", num_classes=10)
 
-        # for averaging loss across batches
         self.train_loss = MeanMetric()
         self.val_loss = MeanMetric()
         self.test_loss = MeanMetric()
 
-        # for tracking best so far validation accuracy
         self.val_acc_best = MaxMetric()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -122,7 +87,6 @@ class MNISTLitModule(LightningModule):
         """
         loss, preds, targets = self.model_step(batch)
 
-        # update and log metrics
         self.train_loss(loss)
         self.train_acc(preds, targets)
         self.log(
@@ -132,11 +96,7 @@ class MNISTLitModule(LightningModule):
             "train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True
         )
 
-        # return loss or backpropagation will fail
         return loss
-
-    def on_train_epoch_end(self) -> None:
-        "Lightning hook that is called when a training epoch ends."
 
     def validation_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
@@ -149,18 +109,15 @@ class MNISTLitModule(LightningModule):
         """
         loss, preds, targets = self.model_step(batch)
 
-        # update and log metrics
         self.val_loss(loss)
         self.val_acc(preds, targets)
         self.log("val/loss", self.val_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("val/acc", self.val_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def on_validation_epoch_end(self) -> None:
-        "Lightning hook that is called when a validation epoch ends."
-        acc = self.val_acc.compute()  # get current val acc
-        self.val_acc_best(acc)  # update best so far val acc
-        # log `val_acc_best` as a value through `.compute()` method, instead of as a metric object
-        # otherwise metric would be reset by lightning after each epoch
+        """Lightning hook that is called when a validation epoch ends."""
+        acc = self.val_acc.compute()
+        self.val_acc_best(acc)
         self.log(
             "val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True
         )
@@ -176,16 +133,12 @@ class MNISTLitModule(LightningModule):
         """
         loss, preds, targets = self.model_step(batch)
 
-        # update and log metrics
         self.test_loss(loss)
         self.test_acc(preds, targets)
         self.log(
             "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
         )
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
-
-    def on_test_epoch_end(self) -> None:
-        """Lightning hook that is called when a test epoch ends."""
 
     def setup(self, stage: str) -> None:
         """Lightning hook that is called at the beginning of fit (train + validate), validate,
@@ -201,10 +154,6 @@ class MNISTLitModule(LightningModule):
 
     def configure_optimizers(self) -> Any:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
-        Normally you'd need one. But in the case of GANs or similar you might have multiple.
-
-        Examples:
-            https://lightning.ai/docs/pytorch/latest/common/lightning_module.html#configure-optimizers
 
         :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
         """
@@ -222,7 +171,3 @@ class MNISTLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-
-
-if __name__ == "__main__":
-    _ = MNISTLitModule(None, None, None, False)  # type: ignore[arg-type]

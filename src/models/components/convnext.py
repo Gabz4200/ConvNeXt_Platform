@@ -19,7 +19,6 @@ from typing import Any
 
 import torch
 import torch.nn.functional as F
-import torch.nn.init
 from torch import Tensor, nn
 
 logger = logging.getLogger(__name__)
@@ -61,7 +60,7 @@ class LayerNorm(nn.Module):
     ) -> None:
         super().__init__()
         if data_format not in ("channels_last", "channels_first"):
-            raise NotImplementedError(f"Unsupported data_format: {data_format}")
+            raise ValueError(f"Unsupported data_format: {data_format}")
         self.weight = nn.Parameter(torch.empty(normalized_shape))
         self.bias = nn.Parameter(torch.empty(normalized_shape))
         self.eps = eps
@@ -448,9 +447,3 @@ def load_dinov3_weights(
     mapped_sd = convert_dinov3_state_dict(sd)
     model.load_state_dict(mapped_sd, strict=False)
     return model
-
-
-if __name__ == "__main__":
-    model = build_convnext("tiny", num_classes=10)
-    x = torch.randn(2, 3, 224, 224)
-    print(model(x).shape)  # (2, 10)

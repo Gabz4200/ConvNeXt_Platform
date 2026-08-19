@@ -2,7 +2,7 @@ import logging
 from collections.abc import Mapping
 from typing import Any
 
-from lightning_utilities.core.rank_zero import rank_prefixed_message, rank_zero_only
+from lightning.pytorch.utilities.rank_zero import rank_prefixed_message, rank_zero_only
 
 
 class RankedLogger(logging.LoggerAdapter):

@@ -13,35 +13,6 @@ class ConvNeXtLitModule(LightningModule):
 
     Compatible with any `net` that accepts an image tensor and returns class logits,
     including the `ConvNeXt` component from `src.models.components.convnext`.
-
-    A `LightningModule` implements 8 key methods:
-
-    ```python
-    def __init__(self):
-    # Define initialization code here.
-
-    def setup(self, stage):
-    # Things to setup before each stage, 'fit', 'validate', 'test', 'predict'.
-    # This hook is called on every process when using DDP.
-
-    def training_step(self, batch, batch_idx):
-    # The complete training step.
-
-    def validation_step(self, batch, batch_idx):
-    # The complete validation step.
-
-    def test_step(self, batch, batch_idx):
-    # The complete test step.
-
-    def predict_step(self, batch, batch_idx):
-    # The complete predict step.
-
-    def configure_optimizers(self):
-    # Define and configure optimizers and LR schedulers.
-    ```
-
-    Docs:
-        https://lightning.ai/docs/pytorch/latest/common/lightning_module.html
     """
 
     def __init__(
@@ -143,9 +114,6 @@ class ConvNeXtLitModule(LightningModule):
 
         return loss
 
-    def on_train_epoch_end(self) -> None:
-        """Lightning hook that is called when a training epoch ends."""
-
     def validation_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int
     ) -> None:
@@ -187,9 +155,6 @@ class ConvNeXtLitModule(LightningModule):
             "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
         )
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
-
-    def on_test_epoch_end(self) -> None:
-        """Lightning hook that is called when a test epoch ends."""
 
     def predict_step(
         self,
@@ -238,7 +203,3 @@ class ConvNeXtLitModule(LightningModule):
                 },
             }
         return {"optimizer": optimizer}
-
-
-if __name__ == "__main__":
-    _ = ConvNeXtLitModule(None, None, None, False)  # type: ignore[arg-type]

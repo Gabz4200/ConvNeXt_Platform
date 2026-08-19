@@ -1,6 +1,6 @@
 from typing import Any
 
-from lightning_utilities.core.rank_zero import rank_zero_only
+from lightning.pytorch.utilities.rank_zero import rank_zero_only
 from omegaconf import OmegaConf
 
 from src.utils import pylogger
@@ -35,7 +35,6 @@ def log_hyperparameters(object_dict: dict[str, Any]) -> None:
 
     hparams["model"] = cfg["model"]
 
-    # save number of model parameters
     hparams["model/params/total"] = sum(p.numel() for p in model.parameters())
     hparams["model/params/trainable"] = sum(
         p.numel() for p in model.parameters() if p.requires_grad
@@ -55,6 +54,5 @@ def log_hyperparameters(object_dict: dict[str, Any]) -> None:
     hparams["ckpt_path"] = cfg.get("ckpt_path")
     hparams["seed"] = cfg.get("seed")
 
-    # send hparams to all loggers
     for logger in trainer.loggers:
         logger.log_hyperparams(hparams)
