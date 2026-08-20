@@ -1,4 +1,4 @@
-"""Pooling components for 2D spatial feature maps."""
+r"""2D spatial pooling and unpooling components for deep convolutional networks."""
 
 import math
 from typing import Any
@@ -9,9 +9,26 @@ from torch import nn
 
 
 def _smallest_prime_factor(n: int) -> int:
-    """Return the minimal divisor greater than 1 of ``n``.
+    r"""_smallest_prime_factor(n) -> int
 
-    Returns ``n`` itself when ``n`` is prime or less than 2.
+    Compute the smallest prime factor of an integer :math:`n \ge 2`.
+
+    Returns ``1`` if :math:`n \le 1`, and :math:`n` itself if :math:`n` is prime.
+
+    Args:
+        n (int): Integer to find the smallest prime factor for.
+
+    Returns:
+        int: Smallest prime divisor greater than 1, or ``n`` if prime, or ``1`` if :math:`n \le 1`.
+
+    Examples::
+
+        >>> _smallest_prime_factor(12)
+        2
+        >>> _smallest_prime_factor(35)
+        5
+        >>> _smallest_prime_factor(17)
+        17
     """
     if n <= 1:
         return 1
@@ -24,15 +41,57 @@ def _smallest_prime_factor(n: int) -> int:
 
 
 class LearnedWeightedGAP(nn.Module):
-    """Learned Weighted Global Average Pooling (GAP) layer for 2D spatial feature maps.
+    r"""LearnedWeightedGAP(in_features, kernel_size=1, num_output=1, concat_gap=True)
 
-    Computes spatial attention weights via a 2D convolution and performs weighted
-    pooling over spatial dimensions. Optionally concatenates standard uniform GAP.
+    Applies learned weighted global average pooling over a 2D spatial feature map.
 
-    :param in_features: Number of input channels.
-    :param kernel_size: Kernel size for the spatial weighter convolution.
-    :param num_output: Number of spatial attention maps to generate.
-    :param concat_gap: Whether to append standard uniform GAP output to pooled features.
+    Computes :math:`\text{num\_output}` spatial attention weight maps via a 2D convolution,
+    normalizes each map with a spatial :func:`~torch.nn.functional.softmax`, and aggregates
+    spatial features via weighted summation:
+
+    .. math::
+        W_{b, o, h, w} = \frac{\exp(Z_{b, o, h, w})}{\sum_{h', w'} \exp(Z_{b, o, h', w'})}
+
+    .. math::
+        \text{Pooled}_{b, o, c} = \sum_{h, w} W_{b, o, h, w} X_{b, c, h, w}
+
+    where :math:`Z = \text{Conv2d}(X)`. Optionally concatenates standard unweighted Global
+    Average Pooling (GAP) features:
+
+    .. math::
+        \text{GAP}(X)_{b, c} = \frac{1}{H \times W} \sum_{h, w} X_{b, c, h, w}
+
+    Args:
+        in_features (int): Number of channels in the input tensor :math:`C_{\text{in}}`.
+        kernel_size (int, optional): Kernel size of the 2D spatial weighter convolution.
+            Must be an odd integer. Default: 1
+        num_output (int, optional): Number of spatial attention maps to generate. Default: 1
+        concat_gap (bool, optional): If ``True``, concatenates uniform GAP features to the output.
+            Default: ``True``
+
+    Shape:
+        - Input: :math:`(N, C_{\text{in}}, H_{\text{in}}, W_{\text{in}})`
+        - Output:
+          - If ``num_output == 1`` and ``concat_gap == False``: :math:`(N, C_{\text{in}})`
+          - If ``num_output == 1`` and ``concat_gap == True``: :math:`(N, 2C_{\text{in}})`
+          - If ``num_output > 1`` and ``concat_gap == False``:
+            :math:`(N, \text{num\_output}, C_{\text{in}})`
+          - If ``num_output > 1`` and ``concat_gap == True``:
+            :math:`(N, \text{num\_output} + 1, C_{\text{in}})`
+
+    Examples::
+
+        >>> m = LearnedWeightedGAP(in_features=64, num_output=1, concat_gap=True)
+        >>> input = torch.randn(4, 64, 16, 16)
+        >>> output = m(input)
+        >>> output.size()
+        torch.Size([4, 128])
+
+        >>> # Multi-head spatial attention without uniform GAP concatenation
+        >>> m = LearnedWeightedGAP(in_features=64, kernel_size=3, num_output=4, concat_gap=False)
+        >>> output = m(input)
+        >>> output.size()
+        torch.Size([4, 4, 64])
     """
 
     def __init__(
@@ -42,7 +101,6 @@ class LearnedWeightedGAP(nn.Module):
         num_output: int = 1,
         concat_gap: bool = True,
     ) -> None:
-        """Initialize `LearnedWeightedGAP` module."""
         super().__init__()
         if kernel_size % 2 == 0:
             raise ValueError(f"kernel_size must be an odd integer, got {kernel_size}.")
@@ -54,7 +112,6 @@ class LearnedWeightedGAP(nn.Module):
 
         padding = kernel_size // 2
 
-        # Produce `num_output` spatial attention maps.
         self.weighter_conv = nn.Conv2d(
             in_channels=in_features,
             out_channels=num_output,
@@ -63,30 +120,29 @@ class LearnedWeightedGAP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Perform spatial weighted global average pooling on the input tensor.
+        r"""forward(x) -> Tensor
 
-        :param x: Input feature tensor of shape `(B, C, H, W)`.
-        :return: Pooled feature tensor. If `num_output == 1` and `concat_gap == False`, shape
-            is `(B, C)`. If `num_output == 1` and `concat_gap == True`, shape is `(B, 2C)`.
-            If `num_output > 1`, shape is `(B, num_output, C)` or `(B, num_output + 1, C)`.
+        Applies learned weighted global average pooling to the input tensor.
+
+        Args:
+            x (Tensor): Input feature tensor of shape :math:`(N, C, H, W)`.
+
+        Returns:
+            Tensor: Pooled output tensor.
         """
         if x.ndim != 4:
             raise ValueError(
                 f"Expected 4D input tensor (B, C, H, W), got tensor with shape {tuple(x.shape)}."
             )
 
-        # Compute spatial attention maps normalized so each map sums to 1.
         logits = self.weighter_conv(x)
         weights = F.softmax(logits.flatten(start_dim=2), dim=-1).view_as(logits)
 
-        # Aggregate spatial feature channels using attention weights.
         pooled = torch.einsum("bohw, bchw -> boc", weights, x)
 
-        # Squeeze output map dimension when only 1 attention map is requested.
         if self.num_output == 1:
             pooled = pooled.squeeze(1)
 
-        # Concatenate unweighted global average pooling features if requested.
         if self.concat_gap:
             gap = x.mean(dim=[2, 3])
             gap_target = gap if self.num_output == 1 else gap.unsqueeze(1)
@@ -95,9 +151,12 @@ class LearnedWeightedGAP(nn.Module):
         return pooled
 
     def get_config(self) -> dict[str, Any]:
-        """Return module configuration dictionary.
+        r"""get_config() -> dict
 
-        :return: Dictionary containing initialization parameters.
+        Returns module configuration parameters.
+
+        Returns:
+            dict[str, Any]: Dictionary containing initialization parameters.
         """
         return {
             "in_features": self.in_features,
@@ -107,9 +166,12 @@ class LearnedWeightedGAP(nn.Module):
         }
 
     def extra_repr(self) -> str:
-        """Return extra representation string for logging.
+        r"""extra_repr() -> str
 
-        :return: Module string representation.
+        Set the extra representation of the module.
+
+        Returns:
+            str: Module string representation.
         """
         return (
             f"in_features={self.in_features}, "
@@ -120,12 +182,45 @@ class LearnedWeightedGAP(nn.Module):
 
 
 class AdaptiveLearnedPool2d(nn.Module):
-    """Learned adaptive pooling of 2D feature maps to a fixed spatial ``output_size``.
+    r"""AdaptiveLearnedPool2d(in_features, intermediate_features, out_features, output_size)
 
-    Applies mobilenet-style depthwise-separable convolutions, downsamples with the
-    strided ``downsampling_core`` until the target size is reached, and mixes the
-    result with the global-average-pooled input before a final convolution. The
-    output spatial dimensions always equal ``output_size`` regardless of input size.
+    Applies learned adaptive spatial downsampling of 2D feature maps to a fixed :attr:`output_size`.
+
+    Uses depthwise-separable convolutions to project input features, repeatedly applies a strided
+    ``downsampling_core`` with stride equal to the smallest prime factor of each dimension, and
+    fuses the downsampled features with global average pooled input features before projecting
+    to :attr:`out_features`.
+
+    Spatial dimensions of the output are guaranteed to be
+    :math:`(H_{\text{out}}, W_{\text{out}}) = \text{output\_size}` regardless of input resolution.
+
+    .. note::
+        Padding is symmetrically bounded by :attr:`max_pad_ratio` (default: 3.0) to prevent
+        excessive intermediate memory blowup when input sizes and target prime factors mismatch.
+        A final :func:`~torch.nn.functional.adaptive_avg_pool2d` absorbs any residual scale difference.
+
+    Args:
+        in_features (int): Number of channels in the input tensor :math:`C_{\text{in}}`.
+        intermediate_features (int): Number of intermediate feature channels used in depthwise cores.
+        out_features (int): Number of channels in the output tensor :math:`C_{\text{out}}`.
+        output_size (tuple[int, int]): Target spatial output size :math:`(H_{\text{out}}, W_{\text{out}})`.
+
+    Shape:
+        - Input: :math:`(N, C_{\text{in}}, H_{\text{in}}, W_{\text{in}})` where :math:`H_{\text{in}}, W_{\text{in}} \ge 1`.
+        - Output: :math:`(N, C_{\text{out}}, H_{\text{out}}, W_{\text{out}})`.
+
+    Examples::
+
+        >>> m = AdaptiveLearnedPool2d(
+        ...     in_features=32,
+        ...     intermediate_features=64,
+        ...     out_features=128,
+        ...     output_size=(7, 7),
+        ... )
+        >>> input = torch.randn(2, 32, 28, 28)
+        >>> output = m(input)
+        >>> output.size()
+        torch.Size([2, 128, 7, 7])
     """
 
     max_pad_ratio: float = 3.0
@@ -140,18 +235,14 @@ class AdaptiveLearnedPool2d(nn.Module):
     ) -> None:
         super().__init__()
         if output_size[0] < 1 or output_size[1] < 1:
-            raise ValueError(
-                f"output_size dimensions must be positive, got {output_size}."
-            )
+            raise ValueError(f"output_size dimensions must be positive, got {output_size}.")
         self.in_features = in_features
         self.intermediate_features = intermediate_features
         self.out_features = out_features
         self.output_size = output_size
 
-        # Calculate the minimal divisor for kernel_size and stride
         self.kernel_size, self.stride = self._get_downsample_params(output_size)
 
-        # Mobilenet style convs for efficient execution.
         self.input_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=in_features,
@@ -209,31 +300,32 @@ class AdaptiveLearnedPool2d(nn.Module):
         self,
         output_size: tuple[int, int],
     ) -> tuple[tuple[int, int], tuple[int, int]]:
-        """Parse ``output_size`` and return the appropriate kernel_size and stride.
+        r"""_get_downsample_params(output_size) -> tuple[tuple[int, int], tuple[int, int]]
 
-        Uses the smallest prime factor of each target dimension so that repeated
-        strided convolutions can reduce the spatial size down to it exactly.
+        Computes kernel size and stride derived from the smallest prime factors of ``output_size``.
 
-        :param output_size: `(output_h, output_w)` target spatial size.
-        :return: `(kernel_size, stride)` tuples `(k_h, k_w)` for both.
+        Args:
+            output_size (tuple[int, int]): Target spatial dimensions :math:`(H_{\text{out}}, W_{\text{out}})`.
+
+        Returns:
+            tuple[tuple[int, int], tuple[int, int]]: Tuple of ``(kernel_size, stride)`` where each is ``(k_h, k_w)``.
         """
         k_h = self._smallest_prime_factor(output_size[0])
         k_w = self._smallest_prime_factor(output_size[1])
 
         return (k_h, k_w), (k_h, k_w)
 
-    def _pad_to_nearest_multiple(
-        self, x: torch.Tensor, multiple: tuple[int, int]
-    ) -> torch.Tensor:
-        """Pad the input tensor to the next multiple in the height and width dimensions.
+    def _pad_to_nearest_multiple(self, x: torch.Tensor, multiple: tuple[int, int]) -> torch.Tensor:
+        r"""_pad_to_nearest_multiple(x, multiple) -> Tensor
 
-        Padding is applied symmetrically on both sides of each dimension (an extra pixel
-        goes to the bottom/right when the total padding is odd). If the spatial dimensions
-        are already multiples of ``multiple``, the input is returned unchanged.
+        Pads spatial dimensions symmetrically to the nearest integer multiple.
 
-        :param x: Input feature tensor of shape `(B, C, H, W)`.
-        :param multiple: `(multiple_h, multiple_w)` to pad the spatial dimensions to.
-        :return: Padded tensor of shape `(B, C, H', W')`.
+        Args:
+            x (Tensor): Input tensor of shape :math:`(N, C, H, W)`.
+            multiple (tuple[int, int]): Target spatial dimension multiples :math:`(M_h, M_w)`.
+
+        Returns:
+            Tensor: Padded tensor with spatial dimensions divisible by ``multiple``.
         """
         height, width = x.shape[-2:]
         pad_h = (multiple[0] - height % multiple[0]) % multiple[0]
@@ -249,12 +341,17 @@ class AdaptiveLearnedPool2d(nn.Module):
         return F.pad(x, (left, right, top, bottom))
 
     def _num_downsamples(self, size: int, target: int, stride: int) -> int:
-        """Return how many strided downsampling applications are needed to reach ``target``.
+        r"""_num_downsamples(size, target, stride) -> int
 
-        :param size: Current spatial dimension.
-        :param target: Target spatial dimension.
-        :param stride: Downsampling stride for the dimension.
-        :return: Number of ``downsampling_core`` applications required.
+        Computes number of strided downsampling steps required to reach or exceed target.
+
+        Args:
+            size (int): Current spatial dimension size.
+            target (int): Target spatial dimension size.
+            stride (int): Downsampling stride per step.
+
+        Returns:
+            int: Number of downsampling applications.
         """
         if stride <= 1:
             return 0
@@ -265,17 +362,16 @@ class AdaptiveLearnedPool2d(nn.Module):
         return num
 
     def _bounded_num_downsamples(self, height: int, width: int) -> int:
-        """Return the number of core applications bounded by the allowed padding ratio.
+        r"""_bounded_num_downsamples(height, width) -> int
 
-        The stride factor of each target dimension is its smallest prime factor, so the
-        exact multiple needed to land on ``output_size`` can exceed the input size by a
-        large factor (e.g. 56x56 -> 7x7 requires padding to 343). The count is reduced
-        until padding each dimension stays within ``max_pad_ratio`` of its input size;
-        the final adaptive pool absorbs the residual reduction.
+        Calculates downsample applications bounded by :attr:`max_pad_ratio`.
 
-        :param height: Input height.
-        :param width: Input width.
-        :return: Number of ``downsampling_core`` applications to run.
+        Args:
+            height (int): Input height :math:`H_{\text{in}}`.
+            width (int): Input width :math:`W_{\text{in}}`.
+
+        Returns:
+            int: Safe number of downsampling core applications.
         """
         target_h, target_w = self.output_size
         k_h, k_w = self.kernel_size
@@ -298,23 +394,21 @@ class AdaptiveLearnedPool2d(nn.Module):
         return num
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Downsample the input to ``output_size`` and mix it with pooled input features.
+        r"""forward(x) -> Tensor
 
-        The input is padded up to ``output_size * stride**N`` so that ``N`` applications of
-        the strided ``downsampling_core`` bring it to ``output_size``, with ``N`` reduced when
-        that would exceed ``max_pad_ratio``; a final adaptive pool guarantees the exact target
-        size before the residual input features are fused.
+        Downsamples spatial dimensions to :attr:`output_size` and fuses with adaptive average pooled inputs.
 
-        :param x: Input feature tensor of shape `(B, C, H, W)`.
-        :return: Pooled tensor of shape `(B, out_features, output_h, output_w)`.
+        Args:
+            x (Tensor): Input feature tensor of shape :math:`(N, C_{\text{in}}, H_{\text{in}}, W_{\text{in}})`.
+
+        Returns:
+            Tensor: Pooled tensor of shape :math:`(N, C_{\text{out}}, H_{\text{out}}, W_{\text{out}})`.
         """
         target_h, target_w = self.output_size
         k_h, k_w = self.kernel_size
 
-        # Number of strided downsampling applications (shared by both dimensions).
         num_downsamples = self._bounded_num_downsamples(x.shape[-2], x.shape[-1])
 
-        # Pad so repeated strided downsampling lands exactly on the target size.
         x = self._pad_to_nearest_multiple(
             x,
             (
@@ -326,28 +420,52 @@ class AdaptiveLearnedPool2d(nn.Module):
         input_features = self.input_conv(x)
         input_avg = F.adaptive_avg_pool2d(x, self.output_size)
 
-        # For loop N times the downsample_core until the target size is reached.
         downsampled = input_features
         for _ in range(num_downsamples):
             downsampled = self.downsampling_core(downsampled)
 
-        # Guarantee exact target spatial size before concatenation.
         downsampled = F.adaptive_avg_pool2d(downsampled, self.output_size)
 
-        # Concatenate the input_avg with the downsampled features along the channel dim.
         pooled = torch.cat([input_avg, downsampled], dim=1)
 
         return self.output_conv(pooled)
 
 
 class AdaptiveLearnedUnpool2d(nn.Module):
-    """Learned adaptive upsampling of 2D feature maps to a fixed spatial ``output_size``.
+    r"""AdaptiveLearnedUnpool2d(in_features, intermediate_features, out_features, output_size)
 
-    The transposed-convolution mirror of ``AdaptiveLearnedPool2d``: applies mobilenet-style
-    depthwise-separable convolutions, upsamples with the strided ``upsampling_core`` until the
-    target size is reached, and mixes the result with the interpolated input before a final
-    convolution. The output spatial dimensions always equal ``output_size`` regardless of
-    input size.
+    Applies learned adaptive spatial upsampling of 2D feature maps to a fixed :attr:`output_size`.
+
+    The transposed-convolution counterpart of :class:`AdaptiveLearnedPool2d`. Uses depthwise-separable
+    convolutions to project inputs, repeatedly applies a strided :class:`~torch.nn.ConvTranspose2d`
+    ``upsampling_core`` with stride equal to the smallest prime factor of each dimension, and mixes
+    upsampled features with bilinearly interpolated input features before projecting to :attr:`out_features`.
+
+    Spatial dimensions of the output are guaranteed to be
+    :math:`(H_{\text{out}}, W_{\text{out}}) = \text{output\_size}` regardless of input resolution.
+
+    Args:
+        in_features (int): Number of channels in the input tensor :math:`C_{\text{in}}`.
+        intermediate_features (int): Number of intermediate feature channels used in depthwise cores.
+        out_features (int): Number of channels in the output tensor :math:`C_{\text{out}}`.
+        output_size (tuple[int, int]): Target spatial output size :math:`(H_{\text{out}}, W_{\text{out}})`.
+
+    Shape:
+        - Input: :math:`(N, C_{\text{in}}, H_{\text{in}}, W_{\text{in}})` where :math:`H_{\text{in}}, W_{\text{in}} \ge 1`.
+        - Output: :math:`(N, C_{\text{out}}, H_{\text{out}}, W_{\text{out}})`.
+
+    Examples::
+
+        >>> m = AdaptiveLearnedUnpool2d(
+        ...     in_features=128,
+        ...     intermediate_features=64,
+        ...     out_features=32,
+        ...     output_size=(28, 28),
+        ... )
+        >>> input = torch.randn(2, 128, 7, 7)
+        >>> output = m(input)
+        >>> output.size()
+        torch.Size([2, 32, 28, 28])
     """
 
     _smallest_prime_factor = staticmethod(_smallest_prime_factor)
@@ -361,18 +479,14 @@ class AdaptiveLearnedUnpool2d(nn.Module):
     ) -> None:
         super().__init__()
         if output_size[0] < 1 or output_size[1] < 1:
-            raise ValueError(
-                f"output_size dimensions must be positive, got {output_size}."
-            )
+            raise ValueError(f"output_size dimensions must be positive, got {output_size}.")
         self.in_features = in_features
         self.intermediate_features = intermediate_features
         self.out_features = out_features
         self.output_size = output_size
 
-        # Upsampling factor per core application (smallest prime factor of each target dim).
         self.kernel_size, self.stride = self._get_upsample_params(output_size)
 
-        # Mobilenet style convs for efficient execution.
         self.input_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=in_features,
@@ -431,13 +545,15 @@ class AdaptiveLearnedUnpool2d(nn.Module):
         self,
         output_size: tuple[int, int],
     ) -> tuple[tuple[int, int], tuple[int, int]]:
-        """Parse ``output_size`` and return the appropriate kernel_size and stride.
+        r"""_get_upsample_params(output_size) -> tuple[tuple[int, int], tuple[int, int]]
 
-        Uses the smallest prime factor of each target dimension so that repeated
-        transposed convolutions can increase the spatial size up to it exactly.
+        Computes kernel size and stride derived from the smallest prime factors of ``output_size``.
 
-        :param output_size: `(output_h, output_w)` target spatial size.
-        :return: `(kernel_size, stride)` tuples `(k_h, k_w)` for both.
+        Args:
+            output_size (tuple[int, int]): Target spatial dimensions :math:`(H_{\text{out}}, W_{\text{out}})`.
+
+        Returns:
+            tuple[tuple[int, int], tuple[int, int]]: Tuple of ``(kernel_size, stride)`` where each is ``(k_h, k_w)``.
         """
         k_h = self._smallest_prime_factor(output_size[0])
         k_w = self._smallest_prime_factor(output_size[1])
@@ -445,12 +561,17 @@ class AdaptiveLearnedUnpool2d(nn.Module):
         return (k_h, k_w), (k_h, k_w)
 
     def _num_upsamples(self, size: int, target: int, factor: int) -> int:
-        """Return how many transposed-conv upsampling applications are needed to reach ``target``.
+        r"""_num_upsamples(size, target, factor) -> int
 
-        :param size: Current spatial dimension.
-        :param target: Target spatial dimension.
-        :param factor: Upsampling factor for the dimension.
-        :return: Number of ``upsampling_core`` applications required.
+        Computes number of transposed-conv upsampling steps required to reach or exceed target.
+
+        Args:
+            size (int): Current spatial dimension size.
+            target (int): Target spatial dimension size.
+            factor (int): Upsampling factor per step.
+
+        Returns:
+            int: Number of upsampling applications.
         """
         if factor <= 1:
             return 0
@@ -461,40 +582,35 @@ class AdaptiveLearnedUnpool2d(nn.Module):
         return num
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Upsample the input to ``output_size`` and mix it with interpolated input features.
+        r"""forward(x) -> Tensor
 
-        The ``upsampling_core`` is applied until ``input_size * factor**N`` reaches at least
-        ``output_size``; a final interpolate guarantees the exact target size before the
-        interpolated input features are fused.
+        Upsamples spatial dimensions to :attr:`output_size` and fuses with interpolated inputs.
 
-        :param x: Input feature tensor of shape `(B, C, H, W)`.
-        :return: Upsampled tensor of shape `(B, out_features, output_h, output_w)`.
+        Args:
+            x (Tensor): Input feature tensor of shape :math:`(N, C_{\text{in}}, H_{\text{in}}, W_{\text{in}})`.
+
+        Returns:
+            Tensor: Upsampled tensor of shape :math:`(N, C_{\text{out}}, H_{\text{out}}, W_{\text{out}})`.
         """
         target_h, target_w = self.output_size
         k_h, k_w = self.kernel_size
 
-        # Number of transposed-conv upsampling applications (shared by both dimensions).
         num_upsamples = max(
             self._num_upsamples(x.shape[-2], target_h, k_h),
             self._num_upsamples(x.shape[-1], target_w, k_w),
         )
 
         input_features = self.input_conv(x)
-        input_up = F.interpolate(
-            x, size=self.output_size, mode="bilinear", align_corners=False
-        )
+        input_up = F.interpolate(x, size=self.output_size, mode="bilinear", align_corners=False)
 
-        # For loop N times the upsample_core until the target size is reached.
         upsampled = input_features
         for _ in range(num_upsamples):
             upsampled = self.upsampling_core(upsampled)
 
-        # Guarantee exact target spatial size before concatenation.
         upsampled = F.interpolate(
             upsampled, size=self.output_size, mode="bilinear", align_corners=False
         )
 
-        # Concatenate the input_up with the upsampled features along the channel dim.
         out = torch.cat([input_up, upsampled], dim=1)
 
         return self.output_conv(out)

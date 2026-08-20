@@ -22,9 +22,7 @@ def _predict_embeddings(model: torch.nn.Module, imgs: torch.Tensor) -> torch.Ten
     :param imgs: A tensor of images, shape (N, C, H, W).
     :return: The predicted embeddings, shape (N, embed_dim).
     """
-    lit_model = ConvNeXtLitModule(
-        net=model, optimizer=None, scheduler=None, compile=False
-    )
+    lit_model = ConvNeXtLitModule(net=model, optimizer=None, scheduler=None, compile=False)
     trainer = Trainer(
         accelerator="cpu",
         devices=1,
@@ -50,8 +48,8 @@ def _predict_embeddings(model: torch.nn.Module, imgs: torch.Tensor) -> torch.Ten
 def test_dinov3_convnext_ricl_embeds(repo_id: str) -> None:
     """Test loading DINOv3 ConvNeXt weights into our model and running a Lightning predict pass.
 
-    Loads images from the Hugging Face dataset brandonyang/ricl_dinov3_embeds and verifies
-    that output features are computed correctly with non-NaN, non-zero embeddings.
+    Loads images from the Hugging Face dataset brandonyang/ricl_dinov3_embeds and verifies that
+    output features are computed correctly with non-NaN, non-zero embeddings.
     """
     # 1. Load streaming dataset sample from brandonyang/ricl_dinov3_embeds
     ds = load_dataset("brandonyang/ricl_dinov3_embeds", split="train", streaming=True)
@@ -98,12 +96,8 @@ def test_dinov3_convnext_ricl_embeds(repo_id: str) -> None:
 
     # Ground truth embeddings in brandonyang/ricl_dinov3_embeds have dim 1280 (from ViT-Large DINOv3).
     # We verify our 768-dim ConvNeXt features are stable across images and have positive cosine similarity.
-    sim_wrist_top = torch.nn.functional.cosine_similarity(
-        features[0], features[1], dim=0
-    ).item()
-    sim_wrist_right = torch.nn.functional.cosine_similarity(
-        features[0], features[2], dim=0
-    ).item()
+    sim_wrist_top = torch.nn.functional.cosine_similarity(features[0], features[1], dim=0).item()
+    sim_wrist_right = torch.nn.functional.cosine_similarity(features[0], features[2], dim=0).item()
 
     assert -1.0 <= sim_wrist_top <= 1.0
     assert -1.0 <= sim_wrist_right <= 1.0
@@ -137,9 +131,7 @@ def test_dinov3_convnext_timm_equivalence() -> None:
     )
 
     # 2. Reference timm model
-    m_timm: Any = timm.create_model(
-        "hf-hub:timm/convnext_tiny.dinov3_lvd1689m", pretrained=True
-    )
+    m_timm: Any = timm.create_model("hf-hub:timm/convnext_tiny.dinov3_lvd1689m", pretrained=True)
     m_timm.eval()
     with torch.no_grad():
         feat_timm = m_timm.forward_features(imgs)

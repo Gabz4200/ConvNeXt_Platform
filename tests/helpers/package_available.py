@@ -8,7 +8,6 @@ def _package_available(package_name: str) -> bool:
     """Check if a package is available in your environment.
 
     :param package_name: The name of the package to be checked.
-
     :return: `True` if the package is available. `False` otherwise.
     """
     try:

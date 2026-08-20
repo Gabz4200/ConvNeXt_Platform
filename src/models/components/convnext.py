@@ -48,8 +48,7 @@ class DropPath(nn.Module):
 class LayerNorm(nn.Module):
     """LayerNorm supporting channels_last (default) and channels_first formats.
 
-    channels_last  — (N, H, W, C)
-    channels_first — (N, C, H, W)
+    channels_last  — (N, H, W, C) channels_first — (N, C, H, W)
     """
 
     def __init__(
@@ -74,9 +73,7 @@ class LayerNorm(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         if self.data_format == "channels_last":
-            return F.layer_norm(
-                x, self.normalized_shape, self.weight, self.bias, self.eps
-            )
+            return F.layer_norm(x, self.normalized_shape, self.weight, self.bias, self.eps)
         # channels_first: manual computation
         u = x.mean(1, keepdim=True)
         s = (x - u).pow(2).mean(1, keepdim=True)
@@ -87,8 +84,8 @@ class LayerNorm(nn.Module):
 class Block(nn.Module):
     """ConvNeXt block.
 
-    Implementation (2): DwConv -> Permute to NHWC -> LayerNorm -> Linear -> GELU -> Linear -> Permute back.
-    Slightly faster than the channels_first variant in PyTorch.
+    Implementation (2): DwConv -> Permute to NHWC -> LayerNorm -> Linear -> GELU -> Linear ->
+    Permute back. Slightly faster than the channels_first variant in PyTorch.
     """
 
     def __init__(
@@ -201,9 +198,7 @@ class ConvNeXt(nn.Module):
         self.norms = nn.ModuleList([nn.Identity() for _ in range(3)] + [self.norm])
 
         # Classification head (Identity when num_classes == 0)
-        self.head = (
-            nn.Linear(dims[-1], num_classes) if num_classes > 0 else nn.Identity()
-        )
+        self.head = nn.Linear(dims[-1], num_classes) if num_classes > 0 else nn.Identity()
 
         self._init_weights()
 
@@ -244,9 +239,7 @@ class ConvNeXt(nn.Module):
         h, w = x.shape[-2:]
         output = []
         total_block_len = len(self.downsample_layers)
-        blocks_to_take = (
-            range(total_block_len - n, total_block_len) if isinstance(n, int) else n
-        )
+        blocks_to_take = range(total_block_len - n, total_block_len) if isinstance(n, int) else n
         for i in range(total_block_len):
             x = self.downsample_layers[i](x)
             x = self.stages[i](x)
@@ -298,10 +291,7 @@ class ConvNeXt(nn.Module):
                     for (cls, tokens), nchw in zip(outputs, nchw_shapes)
                 ]
         elif not reshape:
-            outputs = [
-                (cls, patches.flatten(-2).permute(0, 2, 1))
-                for (cls, patches) in outputs
-            ]
+            outputs = [(cls, patches.flatten(-2).permute(0, 2, 1)) for (cls, patches) in outputs]
 
         class_tokens = [o[0] for o in outputs]
         patch_tokens = [o[1] for o in outputs]
@@ -326,10 +316,13 @@ if hasattr(torch.serialization, "add_safe_globals"):
     ]
     try:
         import timm.layers
+
         if hasattr(timm.layers, "DropPath"):
             safe_list.append(timm.layers.DropPath)
     except (ImportError, AttributeError):
-        logging.getLogger(__name__).debug("timm.layers.DropPath not available for safe_globals registration")
+        logging.getLogger(__name__).debug(
+            "timm.layers.DropPath not available for safe_globals registration"
+        )
     torch.serialization.add_safe_globals(safe_list)
 
 
@@ -374,7 +367,8 @@ FB_SUB_MAP = {
 
 
 def convert_dinov3_state_dict(sd: dict[str, Tensor]) -> dict[str, Tensor]:
-    """Convert state_dict keys from timm or HuggingFace/Facebook DINOv3 ConvNeXt format to our ConvNeXt format."""
+    """Convert state_dict keys from timm or HuggingFace/Facebook DINOv3 ConvNeXt format to our
+    ConvNeXt format."""
     mapped: dict[str, Tensor] = {}
     if "stem.0.weight" in sd:
         # Timm format
@@ -383,18 +377,10 @@ def convert_dinov3_state_dict(sd: dict[str, Tensor]) -> dict[str, Tensor]:
         mapped["downsample_layers.0.1.weight"] = sd["stem.1.weight"]
         mapped["downsample_layers.0.1.bias"] = sd["stem.1.bias"]
         for s in range(1, 4):
-            mapped[f"downsample_layers.{s}.0.weight"] = sd[
-                f"stages.{s}.downsample.0.weight"
-            ]
-            mapped[f"downsample_layers.{s}.0.bias"] = sd[
-                f"stages.{s}.downsample.0.bias"
-            ]
-            mapped[f"downsample_layers.{s}.1.weight"] = sd[
-                f"stages.{s}.downsample.1.weight"
-            ]
-            mapped[f"downsample_layers.{s}.1.bias"] = sd[
-                f"stages.{s}.downsample.1.bias"
-            ]
+            mapped[f"downsample_layers.{s}.0.weight"] = sd[f"stages.{s}.downsample.0.weight"]
+            mapped[f"downsample_layers.{s}.0.bias"] = sd[f"stages.{s}.downsample.0.bias"]
+            mapped[f"downsample_layers.{s}.1.weight"] = sd[f"stages.{s}.downsample.1.weight"]
+            mapped[f"downsample_layers.{s}.1.bias"] = sd[f"stages.{s}.downsample.1.bias"]
         for k, v in sd.items():
             if k.startswith("stages."):
                 parts = k.split(".")

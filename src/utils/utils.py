@@ -37,8 +37,10 @@ def extras(cfg: DictConfig) -> None:
         rich_utils.print_config_tree(cfg, resolve=True, save_to_file=True)
 
 
-def task_wrapper(task_func: Callable) -> Callable:
-    """Optional decorator that controls the failure behavior when executing the task function.
+def task_wrapper(
+    task_func: Callable[[DictConfig], tuple[dict[str, Any], dict[str, Any]]],
+) -> Callable[[DictConfig], tuple[dict[str, Any], dict[str, Any]]]:
+    """Optional decorator that controls failure behavior and cleanup when executing task functions.
 
     :param task_func: The task function to be wrapped.
     :return: The wrapped task function.
@@ -46,9 +48,9 @@ def task_wrapper(task_func: Callable) -> Callable:
 
     def wrap(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
         try:
-            metric_dict, object_dict = task_func(cfg=cfg)
+            metric_dict, object_dict = task_func(cfg)
         except Exception:
-            log.exception("")
+            log.exception("Task execution failed.")
             raise
         finally:
             log.info(f"Output dir: {cfg.paths.output_dir}")
@@ -66,9 +68,7 @@ def task_wrapper(task_func: Callable) -> Callable:
     return wrap
 
 
-def get_metric_value(
-    metric_dict: dict[str, Any], metric_name: str | None
-) -> float | None:
+def get_metric_value(metric_dict: dict[str, Any], metric_name: str | None) -> float | None:
     """Safely retrieves value of the metric logged in LightningModule.
 
     :param metric_dict: A dict containing metric values.

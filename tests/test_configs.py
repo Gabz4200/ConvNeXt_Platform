@@ -46,8 +46,8 @@ def test_eval_config(cfg_eval: DictConfig) -> None:
 def test_convnext_feature_extraction_predict() -> None:
     """Feature-extraction (num_classes=0) model config runs embeddings via Lightning predict.
 
-    Instantiates `model=convnext_embeds` through Hydra and drives inference with
-    `Trainer.predict`, verifying the DINOv3-compatible backbone is used via Lightning.
+    Instantiates `model=convnext_embeds` through Hydra and drives inference with `Trainer.predict`,
+    verifying the DINOv3-compatible backbone is used via Lightning.
     """
     with initialize(version_base="1.3", config_path="../configs"):
         cfg = compose(

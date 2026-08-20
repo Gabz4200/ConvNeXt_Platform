@@ -34,9 +34,7 @@ def test_learned_weighted_gap_shapes(num_output: int, concat_gap: bool) -> None:
 
 
 def test_learned_weighted_gap_gradient_flow() -> None:
-    pooler = LearnedWeightedGAP(
-        in_features=16, kernel_size=1, num_output=1, concat_gap=True
-    )
+    pooler = LearnedWeightedGAP(in_features=16, kernel_size=1, num_output=1, concat_gap=True)
     x = torch.randn(2, 16, 8, 8, requires_grad=True)
 
     out = pooler(x)
@@ -49,9 +47,7 @@ def test_learned_weighted_gap_gradient_flow() -> None:
 
 
 def test_learned_weighted_gap_config() -> None:
-    pooler = LearnedWeightedGAP(
-        in_features=64, kernel_size=3, num_output=2, concat_gap=False
-    )
+    pooler = LearnedWeightedGAP(in_features=64, kernel_size=3, num_output=2, concat_gap=False)
     config = pooler.get_config()
 
     assert config == {
@@ -155,9 +151,7 @@ def test_adaptive_learned_pool_exact_target_size(height: int, target: int) -> No
 
 
 def test_adaptive_learned_pool_gradient_flow() -> None:
-    pooler = _make_adaptive_pooler(
-        in_features=16, intermediate_features=16, output_size=(4, 4)
-    )
+    pooler = _make_adaptive_pooler(in_features=16, intermediate_features=16, output_size=(4, 4))
     x = torch.randn(2, 16, 8, 8, requires_grad=True)
 
     out = pooler(x)
@@ -373,9 +367,7 @@ def test_adaptive_learned_unpool_exact_target_size(height: int, target: int) -> 
 
 
 def test_adaptive_learned_unpool_gradient_flow() -> None:
-    pooler = _make_adaptive_unpooler(
-        in_features=16, intermediate_features=16, output_size=(8, 8)
-    )
+    pooler = _make_adaptive_unpooler(in_features=16, intermediate_features=16, output_size=(8, 8))
     x = torch.randn(2, 16, 4, 4, requires_grad=True)
 
     out = pooler(x)

@@ -32,8 +32,8 @@ def print_config_tree(
     """Prints the contents of a DictConfig as a tree structure using the Rich library.
 
     :param cfg: A DictConfig composed by Hydra.
-    :param print_order: Determines in what order config components are printed. Default is ``("data", "model",
-        "callbacks", "logger", "trainer", "paths", "extras")``.
+    :param print_order: Determines in what order config components are printed. Default is
+        ``("data", "model", "callbacks", "logger", "trainer", "paths", "extras")``.
     :param resolve: Whether to resolve reference fields of DictConfig. Default is ``False``.
     :param save_to_file: Whether to export config to the hydra output folder. Default is ``False``.
     """
@@ -47,7 +47,7 @@ def print_config_tree(
             queue.append(field)
         else:
             log.warning(
-                f"Field '{field}' not found in config. Skipping '{field}' config printing..."
+                f"Config field '{field}' was not found. Skipping '{field}' config printing..."
             )
 
     for field in cfg:
@@ -68,7 +68,7 @@ def print_config_tree(
     rich.print(tree)
 
     if save_to_file:
-        with open(Path(cfg.paths.output_dir, "config_tree.log"), "w") as file:
+        with open(Path(cfg.paths.output_dir, "config_tree.log"), "w", encoding="utf-8") as file:
             rich.print(tree, file=file)
 
 
@@ -93,5 +93,5 @@ def enforce_tags(cfg: DictConfig, save_to_file: bool = False) -> None:
         log.info(f"Tags: {cfg.tags}")
 
     if save_to_file:
-        with open(Path(cfg.paths.output_dir, "tags.log"), "w") as file:
+        with open(Path(cfg.paths.output_dir, "tags.log"), "w", encoding="utf-8") as file:
             rich.print(cfg.tags, file=file)

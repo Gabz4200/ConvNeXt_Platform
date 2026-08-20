@@ -9,6 +9,16 @@ from src.eval import evaluate
 from src.train import train
 
 
+def test_evaluate_missing_ckpt_path_raises_error(cfg_eval: DictConfig) -> None:
+    """Test that evaluate() raises ValueError when ckpt_path is empty or missing."""
+    with open_dict(cfg_eval):
+        cfg_eval.ckpt_path = None
+
+    HydraConfig().set_config(cfg_eval)
+    with pytest.raises(ValueError, match="A valid `ckpt_path` must be specified"):
+        evaluate(cfg_eval)
+
+
 @pytest.mark.slow
 def test_train_eval(tmp_path: Path, cfg_train: DictConfig, cfg_eval: DictConfig) -> None:
     """Tests training and evaluation by training for 1 epoch with `train.py` then evaluating with

@@ -3,7 +3,15 @@ from pathlib import Path
 import pytest
 import torch
 
+from src.data.cifar10_datamodule import CIFAR10DataModule
 from src.data.mnist_datamodule import MNISTDataModule
+
+
+def test_cifar10_datamodule_properties() -> None:
+    """Test basic properties of CIFAR10DataModule."""
+    dm = CIFAR10DataModule(data_dir="data/", batch_size=64)
+    assert dm.num_classes == 10
+    assert dm.hparams.batch_size == 64
 
 
 @pytest.mark.parametrize("batch_size", [32, 128])
@@ -25,7 +33,11 @@ def test_mnist_datamodule(batch_size: int) -> None:
 
     dm.setup()
     assert dm.data_train is not None and dm.data_val is not None and dm.data_test is not None
-    assert hasattr(dm.data_train, "__len__") and hasattr(dm.data_val, "__len__") and hasattr(dm.data_test, "__len__")
+    assert (
+        hasattr(dm.data_train, "__len__")
+        and hasattr(dm.data_val, "__len__")
+        and hasattr(dm.data_test, "__len__")
+    )
     assert dm.train_dataloader() and dm.val_dataloader() and dm.test_dataloader()
 
     num_datapoints = len(dm.data_train) + len(dm.data_val) + len(dm.data_test)

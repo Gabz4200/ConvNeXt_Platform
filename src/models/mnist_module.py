@@ -51,8 +51,6 @@ class MNISTLitModule(LightningModule):
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
-        # by default lightning executes validation step sanity checks before training starts,
-        # so it's worth to make sure validation metrics don't store results from these checks
         self.val_loss.reset()
         self.val_acc.reset()
         self.val_acc_best.reset()
@@ -89,18 +87,12 @@ class MNISTLitModule(LightningModule):
 
         self.train_loss(loss)
         self.train_acc(preds, targets)
-        self.log(
-            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
-        )
-        self.log(
-            "train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True
-        )
+        self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
 
         return loss
 
-    def validation_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> None:
+    def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -118,13 +110,9 @@ class MNISTLitModule(LightningModule):
         """Lightning hook that is called when a validation epoch ends."""
         acc = self.val_acc.compute()
         self.val_acc_best(acc)
-        self.log(
-            "val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True
-        )
+        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
 
-    def test_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> None:
+    def test_step(self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -135,9 +123,7 @@ class MNISTLitModule(LightningModule):
 
         self.test_loss(loss)
         self.test_acc(preds, targets)
-        self.log(
-            "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
-        )
+        self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def setup(self, stage: str) -> None:
@@ -155,7 +141,8 @@ class MNISTLitModule(LightningModule):
     def configure_optimizers(self) -> Any:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
 
-        :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
+        :return: A dict containing the configured optimizers and learning-rate schedulers to be
+            used for training.
         """
         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
         if self.hparams.scheduler is not None:

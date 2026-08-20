@@ -18,30 +18,32 @@ from omegaconf import DictConfig, open_dict
 os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
 
 if hasattr(torch.serialization, "add_safe_globals"):
-    torch.serialization.add_safe_globals([
-        torch.nn.modules.container.ModuleList,
-        torch.nn.modules.container.Sequential,
-        torch.nn.modules.conv.Conv2d,
-        torch.nn.modules.linear.Linear,
-        torch.nn.modules.linear.Identity,
-        torch.nn.modules.normalization.LayerNorm,
-        torch.nn.modules.activation.GELU,
-        torch.nn.modules.loss.CrossEntropyLoss,
-        omegaconf.listconfig.ListConfig,
-        omegaconf.dictconfig.DictConfig,
-        omegaconf.base.ContainerMetadata,
-        omegaconf.base.Metadata,
-        omegaconf.nodes.AnyNode,
-        omegaconf.nodes.StringNode,
-        omegaconf.nodes.IntegerNode,
-        omegaconf.nodes.FloatNode,
-        omegaconf.nodes.BooleanNode,
-        torchmetrics.classification.accuracy.Accuracy,
-        torchmetrics.classification.accuracy.MulticlassAccuracy,
-        torchmetrics.aggregation.MeanMetric,
-        torchmetrics.aggregation.MaxMetric,
-        typing.Any,
-    ])
+    torch.serialization.add_safe_globals(
+        [
+            torch.nn.modules.container.ModuleList,
+            torch.nn.modules.container.Sequential,
+            torch.nn.modules.conv.Conv2d,
+            torch.nn.modules.linear.Linear,
+            torch.nn.modules.linear.Identity,
+            torch.nn.modules.normalization.LayerNorm,
+            torch.nn.modules.activation.GELU,
+            torch.nn.modules.loss.CrossEntropyLoss,
+            omegaconf.listconfig.ListConfig,
+            omegaconf.dictconfig.DictConfig,
+            omegaconf.base.ContainerMetadata,
+            omegaconf.base.Metadata,
+            omegaconf.nodes.AnyNode,
+            omegaconf.nodes.StringNode,
+            omegaconf.nodes.IntegerNode,
+            omegaconf.nodes.FloatNode,
+            omegaconf.nodes.BooleanNode,
+            torchmetrics.classification.accuracy.Accuracy,
+            torchmetrics.classification.accuracy.MulticlassAccuracy,
+            torchmetrics.aggregation.MeanMetric,
+            torchmetrics.aggregation.MaxMetric,
+            typing.Any,
+        ]
+    )
 
 
 @pytest.fixture(scope="package")
@@ -101,11 +103,11 @@ def cfg_train(cfg_train_global: DictConfig, tmp_path: Path) -> DictConfig:
     """A pytest fixture built on top of the `cfg_train_global()` fixture, which accepts a temporary
     logging path `tmp_path` for generating a temporary logging path.
 
-    This is called by each test which uses the `cfg_train` arg. Each test generates its own temporary logging path.
+    This is called by each test which uses the `cfg_train` arg. Each test generates its own
+    temporary logging path.
 
     :param cfg_train_global: The input DictConfig object to be modified.
     :param tmp_path: The temporary logging path.
-
     :return: A DictConfig with updated output and log directories corresponding to `tmp_path`.
     """
     cfg = cfg_train_global.copy()
@@ -124,11 +126,11 @@ def cfg_eval(cfg_eval_global: DictConfig, tmp_path: Path) -> DictConfig:
     """A pytest fixture built on top of the `cfg_eval_global()` fixture, which accepts a temporary
     logging path `tmp_path` for generating a temporary logging path.
 
-    This is called by each test which uses the `cfg_eval` arg. Each test generates its own temporary logging path.
+    This is called by each test which uses the `cfg_eval` arg. Each test generates its own
+    temporary logging path.
 
     :param cfg_train_global: The input DictConfig object to be modified.
     :param tmp_path: The temporary logging path.
-
     :return: A DictConfig with updated output and log directories corresponding to `tmp_path`.
     """
     cfg = cfg_eval_global.copy()

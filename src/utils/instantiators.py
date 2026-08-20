@@ -8,16 +8,16 @@ from src.utils import pylogger
 log = pylogger.RankedLogger(__name__, rank_zero_only=True)
 
 
-def instantiate_callbacks(callbacks_cfg: DictConfig) -> list[Callback]:
-    """Instantiates callbacks from config.
+def instantiate_callbacks(callbacks_cfg: DictConfig | None) -> list[Callback]:
+    """Instantiate callbacks from config.
 
     :param callbacks_cfg: A DictConfig object containing callback configurations.
     :return: A list of instantiated callbacks.
     """
     callbacks: list[Callback] = []
 
-    if not callbacks_cfg:
-        log.warning("No callback configs found! Skipping..")
+    if callbacks_cfg is None:
+        log.warning("No callback configs found! Skipping...")
         return callbacks
 
     if not isinstance(callbacks_cfg, DictConfig):
@@ -31,15 +31,15 @@ def instantiate_callbacks(callbacks_cfg: DictConfig) -> list[Callback]:
     return callbacks
 
 
-def instantiate_loggers(logger_cfg: DictConfig) -> list[Logger]:
-    """Instantiates loggers from config.
+def instantiate_loggers(logger_cfg: DictConfig | None) -> list[Logger]:
+    """Instantiate loggers from config.
 
     :param logger_cfg: A DictConfig object containing logger configurations.
     :return: A list of instantiated loggers.
     """
     logger: list[Logger] = []
 
-    if not logger_cfg:
+    if logger_cfg is None:
         log.warning("No logger configs found! Skipping...")
         return logger
 

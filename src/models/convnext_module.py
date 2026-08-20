@@ -11,8 +11,8 @@ from torchmetrics.classification.accuracy import Accuracy
 class ConvNeXtLitModule(LightningModule):
     """LightningModule wrapping a ConvNeXt backbone for image classification.
 
-    Compatible with any `net` that accepts an image tensor and returns class logits,
-    including the `ConvNeXt` component from `src.models.components.convnext`.
+    Compatible with any `net` that accepts an image tensor and returns class logits, including the
+    `ConvNeXt` component from `src.models.components.convnext`.
     """
 
     def __init__(
@@ -64,9 +64,10 @@ class ConvNeXtLitModule(LightningModule):
 
     def on_train_start(self) -> None:
         """Lightning hook that is called when training begins."""
-        self.val_loss.reset()
-        self.val_acc.reset()
-        self.val_acc_best.reset()
+        if self.is_classifier:
+            self.val_loss.reset()
+            self.val_acc.reset()
+            self.val_acc_best.reset()
 
     def model_step(
         self, batch: tuple[torch.Tensor, torch.Tensor]
@@ -105,18 +106,12 @@ class ConvNeXtLitModule(LightningModule):
 
         self.train_loss(loss)
         self.train_acc(preds, targets)
-        self.log(
-            "train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True
-        )
-        self.log(
-            "train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True
-        )
+        self.log("train/loss", self.train_loss, on_step=False, on_epoch=True, prog_bar=True)
+        self.log("train/acc", self.train_acc, on_step=False, on_epoch=True, prog_bar=True)
 
         return loss
 
-    def validation_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int
-    ) -> None:
+    def validation_step(self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int) -> None:
         """Perform a single validation step on a batch of data from the validation set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -134,13 +129,9 @@ class ConvNeXtLitModule(LightningModule):
         """Lightning hook that is called when a validation epoch ends."""
         acc = self.val_acc.compute()
         self.val_acc_best(acc)
-        self.log(
-            "val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True
-        )
+        self.log("val/acc_best", self.val_acc_best.compute(), sync_dist=True, prog_bar=True)
 
-    def test_step(
-        self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int
-    ) -> None:
+    def test_step(self, batch: tuple[torch.Tensor, torch.Tensor], _batch_idx: int) -> None:
         """Perform a single test step on a batch of data from the test set.
 
         :param batch: A batch of data (a tuple) containing the input tensor of images and target
@@ -151,9 +142,7 @@ class ConvNeXtLitModule(LightningModule):
 
         self.test_loss(loss)
         self.test_acc(preds, targets)
-        self.log(
-            "test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True
-        )
+        self.log("test/loss", self.test_loss, on_step=False, on_epoch=True, prog_bar=True)
         self.log("test/acc", self.test_acc, on_step=False, on_epoch=True, prog_bar=True)
 
     def predict_step(
@@ -187,7 +176,8 @@ class ConvNeXtLitModule(LightningModule):
     def configure_optimizers(self) -> Any:
         """Choose what optimizers and learning-rate schedulers to use in your optimization.
 
-        :return: A dict containing the configured optimizers and learning-rate schedulers to be used for training.
+        :return: A dict containing the configured optimizers and learning-rate schedulers to be
+            used for training.
         """
         optimizer = self.hparams.optimizer(params=self.trainer.model.parameters())
         if self.hparams.scheduler is not None:

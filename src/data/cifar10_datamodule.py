@@ -95,7 +95,18 @@ class CIFAR10DataModule(LightningDataModule):
 
         :param stage: One of `"fit"`, `"validate"`, `"test"`, or `"predict"`.
         """
-        if self.data_train is not None and self.data_val is not None and self.data_test is not None:
+        if self.trainer is not None:
+            if self.hparams.batch_size % self.trainer.world_size != 0:
+                raise RuntimeError(
+                    f"Batch size ({self.hparams.batch_size}) is not divisible by the number of devices ({self.trainer.world_size})."
+                )
+            self.batch_size_per_device = self.hparams.batch_size // self.trainer.world_size
+
+        if (
+            self.data_train is not None
+            and self.data_val is not None
+            and self.data_test is not None
+        ):
             return
 
         import datasets as hf_datasets  # type: ignore[import-untyped]
@@ -115,9 +126,11 @@ class CIFAR10DataModule(LightningDataModule):
         self.data_val = CIFAR10HFDataset(split["test"], self.eval_transform)
         self.data_test = CIFAR10HFDataset(raw["test"], self.eval_transform)
 
-    def train_dataloader(self) -> DataLoader:
+    def train_dataloader(self) -> DataLoader[Any]:
         """Create and return the train dataloader."""
-        assert self.data_train is not None, "Call setup() before train_dataloader()."
+        if self.data_train is None:
+            self.setup("fit")
+        assert self.data_train is not None, "data_train must be set before train_dataloader()"
         return DataLoader(
             dataset=self.data_train,
             batch_size=self.batch_size_per_device,
@@ -126,9 +139,11 @@ class CIFAR10DataModule(LightningDataModule):
             shuffle=True,
         )
 
-    def val_dataloader(self) -> DataLoader:
+    def val_dataloader(self) -> DataLoader[Any]:
         """Create and return the validation dataloader."""
-        assert self.data_val is not None, "Call setup() before val_dataloader()."
+        if self.data_val is None:
+            self.setup("fit")
+        assert self.data_val is not None, "data_val must be set before val_dataloader()"
         return DataLoader(
             dataset=self.data_val,
             batch_size=self.batch_size_per_device,
@@ -137,9 +152,11 @@ class CIFAR10DataModule(LightningDataModule):
             shuffle=False,
         )
 
-    def test_dataloader(self) -> DataLoader:
+    def test_dataloader(self) -> DataLoader[Any]:
         """Create and return the test dataloader."""
-        assert self.data_test is not None, "Call setup() before test_dataloader()."
+        if self.data_test is None:
+            self.setup("test")
+        assert self.data_test is not None, "data_test must be set before test_dataloader()"
         return DataLoader(
             dataset=self.data_test,
             batch_size=self.batch_size_per_device,
