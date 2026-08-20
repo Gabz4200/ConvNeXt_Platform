@@ -6,7 +6,7 @@
 [![pytorch](https://img.shields.io/badge/PyTorch_2.0+-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/get-started/locally/)
 [![lightning](https://img.shields.io/badge/-Lightning_2.0+-792ee5?logo=pytorchlightning&logoColor=white)](https://pytorchlightning.ai/)
 [![hydra](https://img.shields.io/badge/Config-Hydra_1.3-89b8cd)](https://hydra.cc/)
-[![huggingface](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-yellow)](https://huggingface.co/)
+[![huggingface](https://img.shields.io/badge/Hugging_Face-yellow)](https://huggingface.co/)
 [![black](https://img.shields.io/badge/Code%20Style-Black-black.svg?labelColor=gray)](https://black.readthedocs.io/en/stable/)
 [![isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 [![license](https://img.shields.io/badge/License-MIT-green.svg?labelColor=gray)](LICENSE)
@@ -19,7 +19,7 @@ Vision-temporal gamepad controller models combining **ConvNeXt** visual backbone
 
 ---
 
-## 📌 Overview
+## Overview
 
 **ConvNeXt Platform** is a research and production codebase for training vision-temporal policies and controllers for gameplay and platformer games.
 
@@ -77,21 +77,21 @@ By fusing modern pure-convolutional visual encoders (**ConvNeXt** with **DINOv3*
 
 ### Key Capabilities
 
-- 🎮 **21-D Gamepad Controller Head:** Direct multi-task prediction of 17 boolean gamepad buttons (D-pad, Face, Triggers, Bumpers, Sticks, Menu) and 4 continuous joystick axes ($[-1.0, 1.0]$ via `Tanh`).
-- 🍄 **Super Mario Bros (SMB) World Model Benchmark:** Lightweight, fast-training secondary dataset (`DylanRiden/smb-worldmodel-data`) for rapid architecture validation, with automatic 8-button NES action mapping to standard 21-D gamepad targets.
-- ⚡ **RWKV-7 Recurrent Reasoning:** Temporal mixing across video frames using RWKV-7 (Goose) blocks with fast parallel scans for training and $O(1)$ recurrent step updates for inference.
-- 🧬 **DINOv3 Pre-trained Visual Priors:** Native weight loading from `facebook/dinov3-convnext-tiny-pretrain-lvd1689m` and timm checkpoints with intermediate feature extraction.
-- 🔄 **Decoupled Autograd Flow:** Trainable `AdaptiveLearnedPool2d` receives backpropagation gradients through frozen ConvNeXt weights (`freeze_convnext=True`), enabling spatial pooling adaptation without corrupting pre-trained features. Supports differential learning rates (`convnext_lr`) for full fine-tuning.
-- 📺 **NitroGen Dataset Streaming:** Direct streaming of action annotations from Hugging Face Hub (`nvidia/NitroGen` tar.gz shards) paired with real gameplay video frames from disk via a robust **"Load or Skip"** policy with full logging.
-- ⏱️ **Episode-Level Shuffling:** Preserves strict chronological frame sequence ($t_0 \to t_1 \to \dots \to t_{15}$) within every 16-step episode window for continuous temporal mixing, while decorrelating batches across different videos via a streaming reservoir buffer.
-- 🚀 **Online Recurrent Streaming Inference:** Native `init_streaming_state()` and `step(x_t, state)` API maintaining rolling causal convolution buffers and RWKV-7 state tuples for live frame-by-frame and chunk-by-chunk deployment.
-- ⚙️ **Hydra 1.3 + Lightning 2.x:** Compositional YAML configs, CLI overrides, multi-GPU (DDP), mixed precision (AMP 16-bit/bf16), and `torch.compile` support.
+- **21-D Gamepad Controller Head:** Direct multi-task prediction of 17 boolean gamepad buttons (D-pad, Face, Triggers, Bumpers, Sticks, Menu) and 4 continuous joystick axes ($[-1.0, 1.0]$ via `Tanh`).
+- **Super Mario Bros (SMB) World Model Benchmark:** Lightweight, fast-training secondary dataset (`DylanRiden/smb-worldmodel-data`) for rapid architecture validation, with automatic 8-button NES action mapping to standard 21-D gamepad targets.
+- **RWKV-7 Recurrent Reasoning:** Temporal mixing across video frames using RWKV-7 (Goose) blocks with fast parallel scans for training and $O(1)$ recurrent step updates for inference.
+- **DINOv3 Pre-trained Visual Priors:** Native weight loading from `facebook/dinov3-convnext-tiny-pretrain-lvd1689m` and timm checkpoints with intermediate feature extraction.
+- **Decoupled Autograd Flow:** Trainable `AdaptiveLearnedPool2d` receives backpropagation gradients through frozen ConvNeXt weights (`freeze_convnext=True`), enabling spatial pooling adaptation without corrupting pre-trained features. Supports differential learning rates (`convnext_lr`) for full fine-tuning.
+- **NitroGen Dataset Streaming:** Direct streaming of action annotations from Hugging Face Hub (`nvidia/NitroGen` tar.gz shards) paired with real gameplay video frames from disk via a robust **"Load or Skip"** policy with full logging.
+- **Episode-Level Shuffling:** Preserves strict chronological frame sequence ($t_0 \to t_1 \to \dots \to t_{15}$) within every 16-step episode window for continuous temporal mixing, while decorrelating batches across different videos via a streaming reservoir buffer.
+- **Online Recurrent Streaming Inference:** Native `init_streaming_state()` and `step(x_t, state)` API maintaining rolling causal convolution buffers and RWKV-7 state tuples for live frame-by-frame and chunk-by-chunk deployment.
+- **Hydra 1.3 + Lightning 2.x:** Compositional YAML configs, CLI overrides, multi-GPU (DDP), mixed precision (AMP 16-bit/bf16), and `torch.compile` support.
 
 <br>
 
 ---
 
-## 📁 Directory Structure
+## Directory Structure
 
 ```
 ConvNeXt_Platform/
@@ -135,7 +135,7 @@ ConvNeXt_Platform/
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### 1. Local Setup with `uv` (Recommended)
 
@@ -166,7 +166,7 @@ eval-command           # Model evaluation (src.eval:main)
 
 ---
 
-## 💻 Training Workflows
+## Training Workflows
 
 ### 1. Training Super Mario Bros (SMB) — Lightweight Architecture Benchmark
 
@@ -228,7 +228,7 @@ python src/train.py data=cifar10 model=convnext
 
 ---
 
-## ⏱️ Real-Time Online Recurrent Streaming Inference
+## Real-Time Online Recurrent Streaming Inference
 
 The model supports frame-by-frame and chunk-by-chunk live inference, caching causal convolution buffers and RWKV-7 recurrent states:
 
@@ -256,7 +256,7 @@ for frame in live_game_frame_stream():
 
 ---
 
-## 🧪 Testing & Validation
+## Testing & Validation
 
 The comprehensive test suite covers backbone forward passes, 4D/5D sequence handling, stem-bypass ablation, frozen autograd flow, SMB dataset loading and action mapping, NitroGen streaming, real video frame loading with load-or-skip, and Hydra configuration validation:
 
@@ -289,6 +289,6 @@ uv run pyrefly check src/ tests/
 
 ---
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
