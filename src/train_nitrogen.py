@@ -6,30 +6,24 @@ import os
 from functools import partial
 from typing import Any
 
-import hydra
 import lightning as L
-import rootutils
 import torch
-from lightning import Callback, LightningDataModule, LightningModule, Trainer
-from lightning.pytorch.loggers import CSVLogger, Logger, TensorBoardLogger
+from lightning import Trainer
 from omegaconf import DictConfig
 
 os.environ.setdefault("TORCH_FORCE_NO_WEIGHTS_ONLY_LOAD", "1")
+
+import hydra
+import rootutils
+from lightning.pytorch.loggers import CSVLogger, TensorBoardLogger
 
 rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)
 
 from src.data.nitrogen_datamodule import NitroGenDataModule
 from src.models.components.convnext_rwkv7 import ConvNeXtRWKV7Gamepad
 from src.models.convnext_rwkv7_module import ConvNeXtRWKV7GamepadLitModule
-from src.utils import (
-    RankedLogger,
-    extras,
-    get_metric_value,
-    instantiate_callbacks,
-    instantiate_loggers,
-    log_hyperparameters,
-    task_wrapper,
-)
+from src.utils import RankedLogger
+from src.utils.trainer import run_train_task
 
 log = RankedLogger(__name__, rank_zero_only=True)
 
@@ -89,7 +83,7 @@ def train(
     logger_type: str | None = "csv",
     log_dir: str = "logs",
     run_test: bool = True,
-    callbacks: list[Callback] | None = None,
+    callbacks: list[Any] | None = None,
 ) -> dict[str, Any]:
     """Train ConvNeXtRWKV7Gamepad on streamed NitroGen action dataset with PyTorch Lightning.
 
@@ -207,7 +201,7 @@ def train(
     )
 
     # 4. Configure Loggers
-    loggers: list[Logger] = []
+    loggers: list[Any] = []
     if logger_type == "csv":
         loggers.append(CSVLogger(save_dir=log_dir, name="nitrogen_gamepad"))
     elif logger_type == "tensorboard":
@@ -247,74 +241,16 @@ def train(
     }
 
 
-@task_wrapper
-def train_task(cfg: DictConfig) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Task wrapper for Hydra-based NitroGen training."""
-    if cfg.get("seed"):
-        L.seed_everything(cfg.seed, workers=True)
-
-    log.info(f"Instantiating datamodule <{cfg.data._target_}>")
-    datamodule: LightningDataModule = hydra.utils.instantiate(cfg.data)
-
-    log.info(f"Instantiating model <{cfg.model._target_}>")
-    model: LightningModule = hydra.utils.instantiate(cfg.model)
-
-    log.info("Instantiating callbacks...")
-    callbacks: list[Callback] = instantiate_callbacks(cfg.get("callbacks"))
-
-    log.info("Instantiating loggers...")
-    logger: list[Logger] = instantiate_loggers(cfg.get("logger"))
-
-    log.info(f"Instantiating trainer <{cfg.trainer._target_}>")
-    trainer: Trainer = hydra.utils.instantiate(cfg.trainer, callbacks=callbacks, logger=logger)
-
-    object_dict = {
-        "cfg": cfg,
-        "datamodule": datamodule,
-        "model": model,
-        "callbacks": callbacks,
-        "logger": logger,
-        "trainer": trainer,
-    }
-
-    if logger:
-        log.info("Logging hyperparameters!")
-        log_hyperparameters(object_dict)
-
-    if cfg.get("train", True):
-        log.info("Starting NitroGen training!")
-        trainer.fit(model=model, datamodule=datamodule, ckpt_path=cfg.get("ckpt_path"))
-
-    train_metrics = trainer.callback_metrics
-
-    if cfg.get("test", True):
-        log.info("Starting NitroGen testing!")
-        ckpt_path = trainer.checkpoint_callback.best_model_path
-        if ckpt_path == "":
-            log.warning("Best ckpt not found! Using current weights for testing...")
-            ckpt_path = None
-        trainer.test(model=model, datamodule=datamodule, ckpt_path=ckpt_path)
-        log.info(f"Best ckpt path: {ckpt_path}")
-
-    test_metrics = trainer.callback_metrics
-    metric_dict = {**train_metrics, **test_metrics}
-
-    return metric_dict, object_dict
-
-
 @hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
 def main(cfg: DictConfig) -> float | None:
     """Hydra CLI entry point."""
-    extras(cfg)
-    metric_dict, _ = train_task(cfg)
-    metric_value = get_metric_value(
-        metric_dict=metric_dict, metric_name=cfg.get("optimized_metric")
-    )
-    return metric_value
+    metric_dict, _ = run_train_task(cfg, task_name="NitroGen training")
+    metric_value = metric_dict.get("val/loss_best", None)
+    return float(metric_value) if metric_value is not None else None
 
 
 if __name__ == "__main__":
     main()
 
 
-__all__ = ["main", "train", "train_task"]
+__all__ = ["main", "train"]
