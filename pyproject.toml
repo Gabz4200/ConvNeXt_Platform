@@ -42,6 +42,7 @@ dev = [
 train_command = "src.train:main"
 eval_command = "src.eval:main"
 train_nitrogen = "src.train_nitrogen:main"
+train_smb = "src.train_smb:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]

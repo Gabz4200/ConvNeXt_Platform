@@ -11,7 +11,7 @@
 [![isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 [![license](https://img.shields.io/badge/License-MIT-green.svg?labelColor=gray)](LICENSE)
 
-Vision-temporal gamepad controller models combining **ConvNeXt** visual backbones (with **DINOv3** self-supervised priors) and **RWKV-7** linear attention recurrent blocks for **platformer gameplay and behavioral cloning**, with **NVIDIA NitroGen** dataset streaming and real-time online recurrent streaming inference.
+Vision-temporal gamepad controller models combining **ConvNeXt** visual backbones (with **DINOv3** self-supervised priors) and **RWKV-7** linear attention recurrent blocks for **platformer gameplay and behavioral cloning**, with **Super Mario Bros** and **NVIDIA NitroGen** dataset training and real-time online recurrent streaming inference.
 
 </div>
 
@@ -78,6 +78,7 @@ By fusing modern pure-convolutional visual encoders (**ConvNeXt** with **DINOv3*
 ### Key Capabilities
 
 - 🎮 **21-D Gamepad Controller Head:** Direct multi-task prediction of 17 boolean gamepad buttons (D-pad, Face, Triggers, Bumpers, Sticks, Menu) and 4 continuous joystick axes ($[-1.0, 1.0]$ via `Tanh`).
+- 🍄 **Super Mario Bros (SMB) World Model Benchmark:** Lightweight, fast-training secondary dataset (`DylanRiden/smb-worldmodel-data`) for rapid architecture validation, with automatic 8-button NES action mapping to standard 21-D gamepad targets.
 - ⚡ **RWKV-7 Recurrent Reasoning:** Temporal mixing across video frames using RWKV-7 (Goose) blocks with fast parallel scans for training and $O(1)$ recurrent step updates for inference.
 - 🧬 **DINOv3 Pre-trained Visual Priors:** Native weight loading from `facebook/dinov3-convnext-tiny-pretrain-lvd1689m` and timm checkpoints with intermediate feature extraction.
 - 🔄 **Decoupled Autograd Flow:** Trainable `AdaptiveLearnedPool2d` receives backpropagation gradients through frozen ConvNeXt weights (`freeze_convnext=True`), enabling spatial pooling adaptation without corrupting pre-trained features. Supports differential learning rates (`convnext_lr`) for full fine-tuning.
@@ -102,10 +103,11 @@ ConvNeXt_Platform/
 │   │   ├── train.yaml          # Default training config
 │   │   ├── eval.yaml           # Evaluation config
 │   │   ├── model/              # convnext_rwkv7_gamepad*.yaml, convnext.yaml, mnist.yaml
-│   │   ├── data/               # nitrogen.yaml, cifar10.yaml, mnist.yaml
+│   │   ├── data/               # smb.yaml, nitrogen.yaml, cifar10.yaml, mnist.yaml
 │   │   ├── trainer/            # default.yaml, cpu.yaml, gpu.yaml, ddp.yaml
-│   │   └── experiment/         # nitrogen_gamepad.yaml, example.yaml
+│   │   └── experiment/         # smb_gamepad.yaml, nitrogen_gamepad.yaml, example.yaml
 │   ├── train.py                # Main training CLI entrypoint
+│   ├── train_smb.py            # Super Mario Bros training entrypoint (CLI + programmatic train() API)
 │   ├── train_nitrogen.py       # NitroGen training entrypoint (CLI + programmatic train() API)
 │   ├── eval.py                 # Model evaluation script
 │   ├── models/
@@ -117,14 +119,16 @@ ConvNeXt_Platform/
 │   │       ├── poolers.py      # AdaptiveLearnedPool2d, LearnedWeightedGAP, CausalConv1d
 │   │       └── rwkv7.py        # RWKV7Block, parallel scans & recurrent states
 │   ├── data/
+│   │   ├── smb_datamodule.py      # SMBDataModule (Super Mario Bros frames & 8-to-21 mapping)
 │   │   ├── nitrogen_datamodule.py # NitroGenDataModule (streaming actions + video frames)
 │   │   ├── cifar10_datamodule.py  # CIFAR10DataModule
 │   │   └── components/
+│   │       ├── smb_dataset.py      # SMBDataset & SMBStreamingDataset (.npz loading)
 │   │       └── nitrogen_dataset.py # NitroGenDataset (streaming tar.gz, load-or-skip, shuffle buffer)
 │   └── utils/
 │       ├── trainer.py          # Shared run_train_task() lifecycle runner
 │       └── ...
-└── tests/                      # Behavioral pytest test suite (279 passed)
+└── tests/                      # Behavioral pytest test suite (285 passed)
 ```
 
 <br>
@@ -153,6 +157,7 @@ pip install git+https://github.com/YourUsername/ConvNeXt_Platform.git
 
 # Available console scripts:
 train-command          # General training (src.train:main)
+train-smb              # Super Mario Bros training (src.train_smb:main)
 train-nitrogen         # NitroGen gamepad training (src.train_nitrogen:main)
 eval-command           # Model evaluation (src.eval:main)
 ```
@@ -163,10 +168,32 @@ eval-command           # Model evaluation (src.eval:main)
 
 ## 💻 Training Workflows
 
-### 1. Training NitroGen Gamepad via Hydra
+### 1. Training Super Mario Bros (SMB) — Lightweight Architecture Benchmark
 
 ```bash
-# Train on NitroGen dataset with default frozen DINOv3 ConvNeXt
+# Train on Super Mario Bros dataset with default frozen DINOv3 ConvNeXt
+python src/train.py experiment=smb_gamepad
+
+# Or via dedicated entrypoint
+python src/train_smb.py experiment=smb_gamepad
+
+# Python API (no Hydra, Kaggle-friendly):
+from src.train_smb import train as train_smb
+results = train_smb(
+    data_dir="data/smb",
+    batch_size=32,
+    max_samples=10000,
+    pretrained_dinov3=True,
+    freeze_convnext=True,
+    max_epochs=10,
+    accelerator="auto",
+)
+```
+
+### 2. Training NitroGen Gamepad — Large-Scale Behavioral Cloning
+
+```bash
+# Train on NitroGen dataset via Hydra
 python src/train.py experiment=nitrogen_gamepad
 
 # Train on real video frames from disk
@@ -175,39 +202,19 @@ python src/train.py experiment=nitrogen_gamepad data.video_dir=/path/to/gameplay
 # Unfreeze ConvNeXt backbone with differential learning rate
 python src/train.py model=convnext_rwkv7_gamepad_unfrozen model.convnext_lr=1e-5
 
-# Stem-bypass ablation (pooler directly feeds ConvNeXt stage 0)
-python src/train.py model=convnext_rwkv7_gamepad_bypass_stem
-
-# Train on GPU / Multi-GPU
-python src/train.py experiment=nitrogen_gamepad trainer=gpu trainer.devices=1
-python src/train.py experiment=nitrogen_gamepad trainer=ddp trainer.devices=2
-```
-
-### 2. Python API (Kaggle & Programmatic Usage)
-
-Train directly without Hydra using `train()`:
-
-```python
-from src.train_nitrogen import train
-
-results = train(
+# Python API (no Hydra, Kaggle-friendly):
+from src.train_nitrogen import train as train_nitrogen
+results = train_nitrogen(
     video_dir="/kaggle/input/gameplay-videos",
     batch_size=32,
-    max_samples=100000,          # Bounded sample count (or None for full dataset)
-    steps_per_sample=16,         # 16-step sequence windows
-    single_step=True,            # 1 gamepad state per forward pass
-    shuffle=True,                # Episode-level shuffle buffer
-    shuffle_buffer_size=1000,
-    pretrained_dinov3=True,      # Loads DINOv3 pre-trained weights
-    freeze_convnext=True,        # Freezes ConvNeXt while training pooler & RWKV-7
-    convnext_lr=1e-4,            # Differential LR when unfrozen
-    lr=1e-3,
+    max_samples=100000,
+    steps_per_sample=16,
+    single_step=True,
+    pretrained_dinov3=True,
+    freeze_convnext=True,
     max_epochs=10,
     accelerator="auto",
 )
-
-model = results["model"]
-metrics = results["metrics"]
 ```
 
 ### 3. Training Vision Classification Baseline (CIFAR-10)
@@ -251,7 +258,7 @@ for frame in live_game_frame_stream():
 
 ## 🧪 Testing & Validation
 
-The comprehensive test suite covers backbone forward passes, 4D/5D sequence handling, stem-bypass ablation, frozen autograd flow, real video frame loading, load-or-skip error handling, and Hydra configuration validation:
+The comprehensive test suite covers backbone forward passes, 4D/5D sequence handling, stem-bypass ablation, frozen autograd flow, SMB dataset loading and action mapping, NitroGen streaming, real video frame loading with load-or-skip, and Hydra configuration validation:
 
 ```bash
 # Run all fast tests (skips slow downloads)
@@ -265,6 +272,7 @@ pytest
 make test-full
 
 # Run specific domain test suites
+pytest tests/test_smb.py
 pytest tests/test_convnext_rwkv7.py
 pytest tests/test_nitrogen.py
 pytest tests/test_poolers.py

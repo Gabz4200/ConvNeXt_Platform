@@ -6,7 +6,7 @@ Context and technical guidelines for AI coding agents working in the **ConvNeXt 
 
 ## 1. Project Overview
 
-**ConvNeXt Platform** is a research and training codebase for vision-temporal models combining **ConvNeXt** vision backbones (with DINOv3 self-supervised visual priors) and **RWKV-7** linear attention recurrent blocks. It is designed for **gameplay action prediction and platformer control**, predicting 21-D gamepad vectors (17 boolean buttons + 2 dual-axis joysticks) from raw video frames and action trajectories, with support for offline sequence training, dataset streaming from NVIDIA NitroGen, and real-time online recurrent streaming inference.
+**ConvNeXt Platform** is a research and training codebase for vision-temporal models combining **ConvNeXt** vision backbones (with DINOv3 self-supervised visual priors) and **RWKV-7** linear attention recurrent blocks. It is designed for **gameplay action prediction and platformer control**, predicting 21-D gamepad vectors (17 boolean buttons + 2 dual-axis joysticks) from raw video frames and action trajectories, with support for offline sequence training, dataset streaming from NVIDIA NitroGen, Super Mario Bros (SMB) behavioral cloning, and real-time online recurrent streaming inference.
 
 > **MANDATORY RULE — PyTorch Lightning, not plain PyTorch:** Every training, evaluation, and inference
 > path in this codebase MUST be driven by PyTorch Lightning (`LightningModule` + `Trainer`). Never
@@ -42,15 +42,16 @@ ConvNeXt_Platform/
 │   │   ├── train.yaml          # Main training config entrypoint (defaults: data=cifar10, model=convnext)
 │   │   ├── eval.yaml           # Main evaluation config entrypoint
 │   │   ├── model/              # Model configs (convnext.yaml, convnext_rwkv7_gamepad*.yaml, mnist.yaml)
-│   │   ├── data/               # DataModule configs (cifar10.yaml, nitrogen.yaml, mnist.yaml)
+│   │   ├── data/               # DataModule configs (cifar10.yaml, nitrogen.yaml, smb.yaml, mnist.yaml)
 │   │   ├── trainer/            # Trainer configs (default.yaml, cpu.yaml, gpu.yaml, ddp.yaml)
 │   │   ├── callbacks/          # Lightning callback configs (model_checkpoint.yaml, early_stopping.yaml)
 │   │   ├── logger/             # Logger configs (tensorboard.yaml, wandb.yaml, csv.yaml, etc.)
 │   │   ├── debug/              # Debugging presets (default.yaml -> fast_dev_run, limit.yaml, overfit.yaml)
-│   │   ├── experiment/         # Experiment overrides (nitrogen_gamepad.yaml, example.yaml)
+│   │   ├── experiment/         # Experiment overrides (nitrogen_gamepad.yaml, smb_gamepad.yaml, example.yaml)
 │   │   └── hparams_search/     # Hyperparameter search configs (Optuna sweeper)
 │   ├── train.py                # Generic training CLI entrypoint (delegates to run_train_task)
 │   ├── train_nitrogen.py       # NitroGen training entrypoint (CLI + standalone train() API)
+│   ├── train_smb.py            # Super Mario Bros secondary training entrypoint (CLI + train() API)
 │   ├── eval.py                 # Evaluation CLI entrypoint
 │   ├── models/
 │   │   ├── convnext_rwkv7_module.py # ConvNeXtRWKV7GamepadLitModule (BCE + MSE gamepad loss & metrics)
@@ -63,17 +64,20 @@ ConvNeXt_Platform/
 │   │       ├── rwkv7.py        # RWKV7Block, RWKV7BlockState, fast CPU/GPU parallel scans
 │   │       └── simple_dense_net.py
 │   ├── data/
+│   │   ├── smb_datamodule.py      # SMBDataModule (Super Mario Bros frames & 8-to-21 action mapping)
 │   │   ├── nitrogen_datamodule.py # NitroGenDataModule (streaming actions + video frames)
 │   │   ├── cifar10_datamodule.py  # CIFAR10DataModule (loads uoft-cs/cifar10 from HF Hub)
 │   │   ├── mnist_datamodule.py    # MNISTDataModule
 │   │   └── components/
-│   │       ├── nitrogen_dataset.py # NitroGenDataset (streaming tar.gz, load-or-skip real video, shuffle buffer)
+│   │       ├── smb_dataset.py      # SMBDataset & SMBStreamingDataset (.npz frames, action mapping)
+│   │       ├── nitrogen_dataset.py # NitroGenDataset (streaming tar.gz, load-or-skip, shuffle buffer)
 │   │       └── cifar10_dataset.py  # CIFAR10HFDataset
 │   └── utils/
 │       ├── trainer.py          # Shared run_train_task() lifecycle runner
 │       └── ...                 # Logging, instantiators, hyperparameter tracking
 └── tests/
     ├── conftest.py             # Shared fixtures (cfg_train, cfg_eval)
+    ├── test_smb.py             # Super Mario Bros dataset, action mapping, and training tests
     ├── test_convnext_rwkv7.py  # Backbone shape, 4D/5D, stem-bypass, streaming, gradient tests
     ├── test_nitrogen.py        # NitroGen streaming, parquet parsing, real video loading, shuffle tests
     ├── test_poolers.py         # Pooler forward, causality, gradient flow, and streaming tests
@@ -113,6 +117,7 @@ pip install git+https://github.com/YourUsername/ConvNeXt_Platform.git
 # Available console scripts post-install:
 train-command          # General training (src.train:main)
 train-nitrogen         # NitroGen gamepad training (src.train_nitrogen:main)
+train-smb              # Super Mario Bros gamepad training (src.train_smb:main)
 eval-command           # Model evaluation (src.eval:main)
 ```
 
@@ -120,28 +125,30 @@ eval-command           # Model evaluation (src.eval:main)
 
 ## 4. Development Workflow & Commands
 
-### Training
+### Training Workflows
 
 ```bash
-# Train default vision classification (ConvNeXt-Tiny on CIFAR-10)
-python src/train.py
+# 1. Secondary Task: Super Mario Bros (SMB) Training (Easier benchmark for architecture testing)
+python src/train.py experiment=smb_gamepad
+python src/train_smb.py experiment=smb_gamepad
 
-# Train NitroGen Gamepad model via experiment preset
+# 2. Main Task: NitroGen Gamepad Training (Large-scale behavioral cloning)
 python src/train.py experiment=nitrogen_gamepad
-
-# Train NitroGen Gamepad model via dedicated entrypoint
 python src/train_nitrogen.py experiment=nitrogen_gamepad
 
-# Train NitroGen on real video frames from disk
+# 3. NitroGen with real gameplay videos from disk
 python src/train.py experiment=nitrogen_gamepad data.video_dir=/path/to/gameplay_frames
 
-# Unfreeze ConvNeXt backbone with differential learning rate
+# 4. Unfreeze ConvNeXt backbone with differential learning rate
 python src/train.py model=convnext_rwkv7_gamepad_unfrozen model.convnext_lr=1e-5
 
-# Stem-bypass ablation (pooler directly feeds ConvNeXt stage 0)
+# 5. Stem-bypass ablation (pooler directly feeds ConvNeXt stage 0)
 python src/train.py model=convnext_rwkv7_gamepad_bypass_stem
 
-# Train on GPU / Multi-GPU
+# 6. Vision Classification Baseline (CIFAR-10)
+python src/train.py data=cifar10 model=convnext
+
+# 7. Hardware Accelerators
 python src/train.py trainer=gpu trainer.devices=1
 python src/train.py trainer=ddp trainer.devices=2
 ```
@@ -149,9 +156,23 @@ python src/train.py trainer=ddp trainer.devices=2
 ### Python API Training (No Hydra / Kaggle-Friendly)
 
 ```python
-from src.train_nitrogen import train
+# Super Mario Bros Training
+from src.train_smb import train as train_smb
 
-results = train(
+smb_results = train_smb(
+    data_dir="data/smb",
+    batch_size=32,
+    max_samples=10000,
+    pretrained_dinov3=True,
+    freeze_convnext=True,
+    max_epochs=10,
+    accelerator="auto",
+)
+
+# NitroGen Large-Scale Training
+from src.train_nitrogen import train as train_nitrogen
+
+nitrogen_results = train_nitrogen(
     video_dir="/kaggle/input/gameplay-videos",
     batch_size=32,
     max_samples=100000,
@@ -159,32 +180,14 @@ results = train(
     single_step=True,
     pretrained_dinov3=True,
     freeze_convnext=True,
-    lr=1e-3,
     max_epochs=10,
     accelerator="auto",
 )
 ```
 
-### Evaluation
-
-```bash
-# Evaluate checkpoint on test set
-python src/eval.py ckpt_path=/path/to/best_model.ckpt
-
-# Evaluate on CPU
-python src/eval.py ckpt_path=/path/to/best_model.ckpt trainer=cpu
-```
-
 ---
 
 ## 5. Testing Instructions
-
-### Test Suites and Markers
-
-Tests use `pytest`.
-
-- **Fast tests:** Unit tests, component shape/gradient checks, streaming tests, config validation.
-- **Slow tests (`@pytest.mark.slow`):** Hub downloads and DINOv3 weight verification.
 
 ```bash
 # Run all fast tests
@@ -198,6 +201,7 @@ pytest
 make test-full
 
 # Run specific domain test suites
+pytest tests/test_smb.py
 pytest tests/test_convnext_rwkv7.py
 pytest tests/test_nitrogen.py
 pytest tests/test_poolers.py
@@ -225,19 +229,22 @@ uv run pyrefly check src/ tests/
 - **Gamepad Projection Head:** `GamepadHead` mapping representations to 21 outputs: 17 unconstrained button logits ($L_{\text{BCE}}$) and 4 continuous joystick coordinates ($L_{\text{MSE}}$) bounded to $[-1.0, 1.0]$ via `Tanh`.
 - **Online Recurrent Streaming:** `init_streaming_state(batch_size, device, dtype)` and `step(x_t, state)` caching `CausalConv1d` receptive field buffers and `RWKV7BlockState` recurrent states for both single 4D frames $(B, C, H, W)$ and N-frame 5D chunks $(B, T, C, H, W)$.
 
-### 2. NitroGen Streaming Dataset (`src/data/components/nitrogen_dataset.py`)
-- **Action Tables:** Streams `actions_processed.parquet` (falling back to `actions_raw.parquet`) and `metadata.json` from `nvidia/NitroGen` tar.gz shards on HuggingFace Hub via `HfFileSystem`.
-- **Single-step Unrolling:** When `single_step=True`, each 16-step sequence window is unrolled so that each forward pass processes 1 frame $(3, H, W)$ and predicts 1 Gamepad State $(21,)$, turning 1 window sample into 16 individual training samples.
-- **Real Video Loading ("Load or Skip"):** When `video_dir` is provided, loads real video frame images matching metadata (`video_id`, `chunk_id`, `start_frame + step_i`). If frames for a chunk are missing from disk, the window is cleanly skipped and logged (`logger.info`), enabling training on partial video downloads without corrupting sequences.
-- **Episode-Level Shuffling:** Preserves strict chronological frame ordering within every 16-step episode ($t_0 \to t_1 \to \dots \to t_{15}$) for continuous RWKV-7 temporal mixing, while shuffling episode window order across different gameplay videos via a streaming reservoir shuffle buffer (`shuffle_buffer_size=1000`).
+### 2. Super Mario Bros Dataset (`src/data/components/smb_dataset.py`)
+- **Format:** Loads $(224, 256, 3)$ uint8 frames and 8-element NES action vectors `[Up, Down, Left, Right, A, B, Start, Select]` from `DylanRiden/smb-worldmodel-data` (`smb_frames.zip`).
+- **Action Mapping:** `map_nes_action_to_gamepad_21()` maps NES buttons into standard 21-D gamepad targets:
+  - D-pad: `Up -> dpad_up`, `Down -> dpad_down`, `Left -> dpad_left`, `Right -> dpad_right`.
+  - Buttons: `A -> south`, `B -> west`, `Start -> start`, `Select -> back`.
+  - Joysticks: `j_left_x = Right - Left`, `j_left_y = Down - Up`.
+- Allows zero-shot / fine-tuning transfer using the exact same 21-D `ConvNeXtRWKV7Gamepad` architecture.
 
-### 3. Gamepad LightningModule (`src/models/convnext_rwkv7_module.py`)
-- **Loss:** Combined $L = L_{\text{BCE}}(\text{buttons}) + \lambda L_{\text{MSE}}(\text{joysticks})$.
-- **Metrics:** `MultilabelAccuracy(num_labels=17)` on buttons (flattened to `(-1, 17)` for compatibility with both 2D single-step and 3D temporal sequences) and `MeanMetric` MSE on joysticks.
-- **Differential Optimizer:** Supports distinct learning rate for ConvNeXt backbone via `convnext_lr` when fine-tuning unfrozen.
+### 3. NitroGen Streaming Dataset (`src/data/components/nitrogen_dataset.py`)
+- **Action Tables:** Streams `actions_processed.parquet` and `metadata.json` from `nvidia/NitroGen` tar.gz shards on HuggingFace Hub via `HfFileSystem`.
+- **Single-step Unrolling:** When `single_step=True`, each 16-step sequence window is unrolled into 16 individual single-frame forward passes $(3, H, W) \to (21,)$.
+- **Real Video Loading ("Load or Skip"):** Loads real video frame images from `video_dir`. Missing video chunks are cleanly skipped and logged (`logger.info`), enabling training on partial video libraries.
+- **Episode-Level Shuffling:** Preserves strict chronological frame sequence ($t_0 \to t_1 \to \dots \to t_{15}$) within every 16-step episode for continuous RWKV-7 temporal mixing, while shuffling episode order via a reservoir shuffle buffer (`shuffle_buffer_size=1000`).
 
 ### 4. Shared Task Runner (`src/utils/trainer.py`)
-- `run_train_task(cfg, task_name)`: Deduplicated Hydra train/test lifecycle runner used by both `src/train.py` and `src/train_nitrogen.py`.
+- `run_train_task(cfg, task_name)`: Deduplicated Hydra train/test lifecycle runner used by `src/train.py`, `src/train_nitrogen.py`, and `src/train_smb.py`.
 
 ---
 
@@ -247,7 +254,7 @@ uv run pyrefly check src/ tests/
 2. **Single Source of Truth:** Infer dependent parameters (e.g. `num_classes` in `ConvNeXtLitModule` inferred from `net.head.out_features`) rather than duplicating them across configs.
 3. **No Dead Comments / Obvious Restatements:** Avoid narrative storytelling, decorative ASCII separators, or comments that merely restate symbol names.
 4. **Hydra Interpolation:** Tie scheduler lengths dynamically to trainer configurations using variable interpolation (`T_max: ${trainer.max_epochs}`).
-5. **PyTorch Lightning, Not Plain PyTorch:** Drive ALL training, evaluation, and inference through Lightning (`LightningModule` + `Trainer`). No manual training loops, raw `torch.no_grad()` inference, or bare `optimizer.step()` pipelines.
+5. **PyTorch Lightning, Not Plain PyTorch:** Drive ALL training, evaluation, and inference through Lightning (`LightningModule` + `Trainer`).
 6. **Chronological Frame Integrity:** Never shuffle individual frames within a gameplay video episode. Shuffling operates at the episode/window buffer level to maintain continuous temporal mixing for RWKV-7.
 7. **Sphinx Docstrings:** Docstring parameter tags must have a space after the colon (`:param name: desc`, `:return: desc`).
 

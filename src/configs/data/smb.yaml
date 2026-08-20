@@ -1,0 +1,14 @@
+_target_: src.data.smb_datamodule.SMBDataModule
+data_dir: data/smb
+repo_id: DylanRiden/smb-worldmodel-data
+filename: smb_frames.zip
+download: true
+batch_size: 32
+val_ratio: 0.1
+test_ratio: 0.1
+max_samples: null
+image_size: [224, 224]
+target_mode: gamepad_21
+num_workers: 0
+pin_memory: false
+seed: 42
