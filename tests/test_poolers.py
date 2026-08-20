@@ -1,5 +1,6 @@
 import pytest
 import torch
+import torch.nn.functional as F
 
 from src.models.components.poolers import (
     AdaptiveLearnedPool2d,
@@ -249,6 +250,36 @@ def test_adaptive_learned_pool_does_not_pad_blowup() -> None:
     out = pooler(x)
 
     assert out.shape == (2, 8, 7, 7)
+
+
+def test_adaptive_learned_pool_unpadded_input_avg() -> None:
+    pooler = _make_adaptive_pooler(
+        in_features=8,
+        intermediate_features=16,
+        out_features=8,
+        output_size=(4, 4),
+    )
+    captured_pooled = []
+
+    def hook(
+        module: torch.nn.Module,
+        inputs: tuple[torch.Tensor, ...],
+        output: torch.Tensor,
+    ) -> None:
+        captured_pooled.append(inputs[0])
+
+    hook_handle = pooler.output_conv.register_forward_hook(hook)
+
+    # 7x7 input requires padding to 8x8 for strided convolutions
+    x = torch.ones(2, 8, 7, 7)
+    _ = pooler(x)
+    hook_handle.remove()
+
+    assert len(captured_pooled) == 1
+    input_avg = captured_pooled[0][:, :8, :, :]
+    expected_avg = F.adaptive_avg_pool2d(x, (4, 4))
+    torch.testing.assert_close(input_avg, expected_avg)
+    torch.testing.assert_close(input_avg, torch.ones_like(input_avg))
 
 
 @pytest.mark.parametrize("output_size", [(0, 4), (4, 0), (0, 0)])

@@ -407,6 +407,8 @@ class AdaptiveLearnedPool2d(nn.Module):
         target_h, target_w = self.output_size
         k_h, k_w = self.kernel_size
 
+        input_avg = F.adaptive_avg_pool2d(x, self.output_size)
+
         num_downsamples = self._bounded_num_downsamples(x.shape[-2], x.shape[-1])
 
         x = self._pad_to_nearest_multiple(
@@ -418,7 +420,6 @@ class AdaptiveLearnedPool2d(nn.Module):
         )
 
         input_features = self.input_conv(x)
-        input_avg = F.adaptive_avg_pool2d(x, self.output_size)
 
         downsampled = input_features
         for _ in range(num_downsamples):
