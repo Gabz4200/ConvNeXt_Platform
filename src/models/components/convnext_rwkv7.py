@@ -27,6 +27,58 @@ class GamepadStreamingState(NamedTuple):
     rwkv_states: list[RWKV7BlockState]
 
 
+class _InputNormalize(nn.Module):
+    """Apply ImageNet normalization to input images in [0, 1] or [0, 255] range."""
+
+    def __init__(
+        self,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+    ) -> None:
+        super().__init__()
+        self.register_buffer("mean", torch.tensor(mean).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor(std).view(1, 3, 1, 1))
+
+    def forward(self, x: Tensor) -> Tensor:
+        x = x.float()
+        if x.max() > 1.0:
+            x = x / 255.0
+        return (x - self.mean) / self.std
+
+
+class _InputNormalize(nn.Module):
+    """Apply DINOv3-standard ImageNet normalization to raw image inputs.
+
+    Mirrors the preprocessing pipeline in DINOv3's ``DINOv3ViTImageProcessorFast``:
+    rescale ``[0, 255]`` inputs to ``[0, 1]`` (when needed), then normalize with
+    ImageNet mean and standard deviation. Accepts both uint8 and float32 tensors.
+
+    :param mean: Per-channel normalization mean. Default: (0.485, 0.456, 0.406).
+    :param std: Per-channel normalization standard deviation. Default: (0.229, 0.224, 0.225).
+    """
+
+    def __init__(
+        self,
+        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
+        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
+    ) -> None:
+        super().__init__()
+        self.register_buffer("mean", torch.tensor(mean).view(1, 3, 1, 1))
+        self.register_buffer("std", torch.tensor(std).view(1, 3, 1, 1))
+
+    def forward(self, x: Tensor) -> Tensor:
+        """Normalize input tensor to ImageNet color space.
+
+        :param x: Image tensor of shape `(N, 3, H, W)` or `(N, T, 3, H, W)` in
+            uint8 ``[0, 255]`` or float ``[0, 1]`` range.
+        :return: Normalized float32 tensor of same shape.
+        """
+        x = x.float()
+        if x.max() > 1.0:
+            x = x / 255.0
+        return (x - self.mean) / self.std
+
+
 class GamepadHead(nn.Module):
     """Projection head mapping hidden representations to standard gamepad layout.
 
@@ -87,13 +139,14 @@ class ConvNeXtRWKV7Gamepad(nn.Module):
     """End-to-end vision-temporal gamepad controller architecture.
 
     Pipeline:
-    1. Spatial pooling: `AdaptiveLearnedPool2d` downsamples arbitrary-resolution inputs to a
+    1. Input normalization: `_InputNormalize` applies DINOv3-standard ImageNet normalization.
+    2. Spatial pooling: `AdaptiveLearnedPool2d` downsamples arbitrary-resolution inputs to a
        fixed resolution (224x224 for standard path, or 56x56 when bypassing the ConvNeXt stem).
-    2. Spatial feature extraction: DINOv3-compatible `ConvNeXt` backbone.
-    3. Spatial pooling: `LearnedWeightedGAP` aggregates spatial feature maps with attention.
-    4. Temporal convolution: `CausalConv1d` with residual shortcut.
-    5. Recurrent temporal reasoning: 4x `RWKV7Block` with residual streams.
-    6. Output projection: `GamepadHead` mapping to 17 button logits + 4 joystick axes in `[-1, 1]`.
+    3. Spatial feature extraction: DINOv3-compatible `ConvNeXt` backbone.
+    4. Spatial pooling: `LearnedWeightedGAP` aggregates spatial feature maps with attention.
+    5. Temporal convolution: `CausalConv1d` with residual shortcut.
+    6. Recurrent temporal reasoning: 4x `RWKV7Block` with residual streams.
+    7. Output projection: `GamepadHead` mapping to 17 button logits + 4 joystick axes in `[-1, 1]`.
 
     :param in_chans: Number of input image channels. Default: 3.
     :param pool_intermediate_features: Intermediate channels for AdaptiveLearnedPool2d. Default: 32.
@@ -164,6 +217,10 @@ class ConvNeXtRWKV7Gamepad(nn.Module):
         self.rwkv_layers = rwkv_layers
         self.num_buttons = num_buttons
         self.num_joysticks = num_joysticks
+
+        # ImageNet normalization matching DINOv3's DINOv3ViTImageProcessorFast.
+        # Handles both uint8 [0, 255] and float32 [0, 1] inputs.
+        self.normalize = _InputNormalize()
 
         # 1. AdaptiveLearnedPool2d
         if bypass_stem:
@@ -297,13 +354,16 @@ class ConvNeXtRWKV7Gamepad(nn.Module):
                 f"Expected 4D (B, C, H, W) or 5D (B, T, C, H, W) input, got {tuple(x.shape)}"
             )
 
-        # 1. Adaptive pooling
-        x_pooled = self.pooler(x_flat)
+        # 1. Normalize input images (matches DINOv3ViTImageProcessorFast)
+        x_norm = self.normalize(x_flat)
 
-        # 2. ConvNeXt stages
+        # 2. Adaptive pooling
+        x_pooled = self.pooler(x_norm)
+
+        # 3. ConvNeXt stages
         x_conv = self._forward_convnext_stages(x_pooled)
 
-        # 3. Spatial aggregation with LearnedWeightedGAP
+        # 4. Spatial aggregation with LearnedWeightedGAP
         gap_feat = self.gap(x_conv)
         gap_feat = self.gap_to_rwkv(gap_feat)
 
@@ -394,9 +454,10 @@ class ConvNeXtRWKV7Gamepad(nn.Module):
         if state is None:
             state = self.init_streaming_state(batch_size, x_t.device, x_t.dtype)
 
-        # 1. Pool + ConvNeXt + GAP
+        # 1. Pool + normalize + ConvNeXt + GAP
         x_pooled = self.pooler(x_flat)
-        x_conv = self._forward_convnext_stages(x_pooled)
+        x_norm = self.normalize(x_pooled)
+        x_conv = self._forward_convnext_stages(x_norm)
         gap_feat = self.gap(x_conv)
         gap_feat = self.gap_to_rwkv(gap_feat)
 
