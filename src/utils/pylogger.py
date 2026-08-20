@@ -1,3 +1,5 @@
+"""Multi-GPU / rank-zero aware logging adapter."""
+
 import logging
 from collections.abc import Mapping
 from typing import Any
@@ -51,3 +53,6 @@ class RankedLogger(logging.LoggerAdapter):
                     self.logger.log(level, proc_msg, *args, **proc_kwargs)
             elif rank is None or current_rank == rank:
                 self.logger.log(level, proc_msg, *args, **proc_kwargs)
+
+
+__all__ = ["RankedLogger"]

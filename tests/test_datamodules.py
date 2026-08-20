@@ -1,10 +1,29 @@
+"""Tests for dataset components and PyTorch Lightning DataModules."""
+
 from pathlib import Path
 
 import pytest
 import torch
+from torchvision import transforms
 
 from src.data.cifar10_datamodule import CIFAR10DataModule
+from src.data.components.cifar10_dataset import CIFAR10HFDataset
 from src.data.mnist_datamodule import MNISTDataModule
+
+
+def test_cifar10_hf_dataset() -> None:
+    """Test CIFAR10HFDataset wrapper."""
+    fake_split = [
+        {"img": torch.zeros((3, 32, 32)), "label": 0},
+        {"img": torch.ones((3, 32, 32)), "label": 1},
+    ]
+    transform = transforms.Lambda(lambda x: x + 1.0)
+    dataset = CIFAR10HFDataset(fake_split, transform=transform)
+
+    assert len(dataset) == 2
+    img, label = dataset[0]
+    assert label == 0
+    assert torch.allclose(img, torch.ones((3, 32, 32)))
 
 
 def test_cifar10_datamodule_properties() -> None:

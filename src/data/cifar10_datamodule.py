@@ -2,25 +2,11 @@
 
 from typing import Any
 
-import torch
 from lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset
 from torchvision.transforms import transforms
 
-
-class CIFAR10HFDataset(Dataset):
-    """Thin wrapper around a HuggingFace CIFAR-10 split that applies torchvision transforms."""
-
-    def __init__(self, hf_split: Any, transform: Any) -> None:
-        self.hf_split = hf_split
-        self.transform = transform
-
-    def __len__(self) -> int:
-        return len(self.hf_split)
-
-    def __getitem__(self, idx: int) -> tuple[torch.Tensor, int]:
-        item = self.hf_split[idx]
-        return self.transform(item["img"]), item["label"]
+from src.data.components.cifar10_dataset import CIFAR10HFDataset
 
 
 class CIFAR10DataModule(LightningDataModule):
@@ -164,3 +150,6 @@ class CIFAR10DataModule(LightningDataModule):
             pin_memory=self.hparams["pin_memory"],
             shuffle=False,
         )
+
+
+__all__ = ["CIFAR10DataModule", "CIFAR10HFDataset"]

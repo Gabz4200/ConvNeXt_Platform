@@ -1,3 +1,5 @@
+"""Tests for Hydra sweeps, multiruns, and Optuna hyperparameter optimization."""
+
 from pathlib import Path
 
 import pytest

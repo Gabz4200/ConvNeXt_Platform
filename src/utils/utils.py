@@ -1,3 +1,5 @@
+"""General utility functions and task execution wrappers."""
+
 import warnings
 from collections.abc import Callable
 from importlib.util import find_spec
@@ -90,3 +92,6 @@ def get_metric_value(metric_dict: dict[str, Any], metric_name: str | None) -> fl
     log.info(f"Retrieved metric value! <{metric_name}={metric_value}>")
 
     return metric_value
+
+
+__all__ = ["extras", "get_metric_value", "task_wrapper"]

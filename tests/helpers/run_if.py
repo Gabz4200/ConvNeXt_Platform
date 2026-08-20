@@ -140,3 +140,6 @@ class RunIf:
             reason=f"Requires: [{' + '.join(reasons)}]",
             **kwargs,
         )
+
+
+__all__ = ["RunIf"]

@@ -1,3 +1,5 @@
+"""Hydra instantiation utilities for callbacks and loggers."""
+
 import hydra
 from lightning import Callback
 from lightning.pytorch.loggers import Logger
@@ -52,3 +54,6 @@ def instantiate_loggers(logger_cfg: DictConfig | None) -> list[Logger]:
             logger.append(hydra.utils.instantiate(lg_conf))
 
     return logger
+
+
+__all__ = ["instantiate_callbacks", "instantiate_loggers"]

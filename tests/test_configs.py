@@ -1,3 +1,5 @@
+"""Tests for Hydra configuration loading and component instantiation."""
+
 from typing import cast
 
 import hydra

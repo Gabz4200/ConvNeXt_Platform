@@ -1,3 +1,5 @@
+"""Tests for model evaluation pipeline and checkpoint evaluation."""
+
 import os
 from pathlib import Path
 

@@ -1,3 +1,5 @@
+"""Shell command runner helper for pytest suites."""
+
 import pytest
 
 from tests.helpers.package_available import _SH_AVAILABLE
@@ -20,3 +22,6 @@ def run_sh_command(command: list[str]) -> None:
         msg = e.stderr.decode()
     if msg:
         pytest.fail(msg)
+
+
+__all__ = ["run_sh_command"]

@@ -9,7 +9,7 @@ from torch import nn
 
 
 def _smallest_prime_factor(n: int) -> int:
-    r"""_smallest_prime_factor(n) -> int
+    r"""_smallest_prime_factor(n) -> int.
 
     Compute the smallest prime factor of an integer :math:`n \ge 2`.
 
@@ -120,7 +120,7 @@ class LearnedWeightedGAP(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""forward(x) -> Tensor
+        r"""Forward(x) -> Tensor.
 
         Applies learned weighted global average pooling to the input tensor.
 
@@ -151,7 +151,7 @@ class LearnedWeightedGAP(nn.Module):
         return pooled
 
     def get_config(self) -> dict[str, Any]:
-        r"""get_config() -> dict
+        r"""get_config() -> dict.
 
         Returns module configuration parameters.
 
@@ -166,7 +166,7 @@ class LearnedWeightedGAP(nn.Module):
         }
 
     def extra_repr(self) -> str:
-        r"""extra_repr() -> str
+        r"""extra_repr() -> str.
 
         Set the extra representation of the module.
 
@@ -316,7 +316,7 @@ class AdaptiveLearnedPool2d(nn.Module):
         return (k_h, k_w), (k_h, k_w)
 
     def _pad_to_nearest_multiple(self, x: torch.Tensor, multiple: tuple[int, int]) -> torch.Tensor:
-        r"""_pad_to_nearest_multiple(x, multiple) -> Tensor
+        r"""_pad_to_nearest_multiple(x, multiple) -> Tensor.
 
         Pads spatial dimensions symmetrically to the nearest integer multiple.
 
@@ -341,7 +341,7 @@ class AdaptiveLearnedPool2d(nn.Module):
         return F.pad(x, (left, right, top, bottom))
 
     def _num_downsamples(self, size: int, target: int, stride: int) -> int:
-        r"""_num_downsamples(size, target, stride) -> int
+        r"""_num_downsamples(size, target, stride) -> int.
 
         Computes number of strided downsampling steps required to reach or exceed target.
 
@@ -362,7 +362,7 @@ class AdaptiveLearnedPool2d(nn.Module):
         return num
 
     def _bounded_num_downsamples(self, height: int, width: int) -> int:
-        r"""_bounded_num_downsamples(height, width) -> int
+        r"""_bounded_num_downsamples(height, width) -> int.
 
         Calculates downsample applications bounded by :attr:`max_pad_ratio`.
 
@@ -394,7 +394,7 @@ class AdaptiveLearnedPool2d(nn.Module):
         return num
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""forward(x) -> Tensor
+        r"""Forward(x) -> Tensor.
 
         Downsamples spatial dimensions to :attr:`output_size` and fuses with adaptive average pooled inputs.
 
@@ -562,7 +562,7 @@ class AdaptiveLearnedUnpool2d(nn.Module):
         return (k_h, k_w), (k_h, k_w)
 
     def _num_upsamples(self, size: int, target: int, factor: int) -> int:
-        r"""_num_upsamples(size, target, factor) -> int
+        r"""_num_upsamples(size, target, factor) -> int.
 
         Computes number of transposed-conv upsampling steps required to reach or exceed target.
 
@@ -583,7 +583,7 @@ class AdaptiveLearnedUnpool2d(nn.Module):
         return num
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        r"""forward(x) -> Tensor
+        r"""Forward(x) -> Tensor.
 
         Upsamples spatial dimensions to :attr:`output_size` and fuses with interpolated inputs.
 

@@ -1,3 +1,5 @@
+"""Tests for model training pipeline, fast_dev_run, and trainer configurations."""
+
 import os
 from pathlib import Path
 

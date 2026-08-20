@@ -1,3 +1,5 @@
+"""Hyperparameter logging utilities for PyTorch Lightning."""
+
 from typing import Any
 
 from lightning.pytorch.utilities.rank_zero import rank_zero_only
@@ -56,3 +58,6 @@ def log_hyperparameters(object_dict: dict[str, Any]) -> None:
 
     for logger in trainer.loggers:
         logger.log_hyperparams(hparams)
+
+
+__all__ = ["log_hyperparameters"]

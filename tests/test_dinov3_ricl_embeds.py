@@ -1,3 +1,5 @@
+"""Tests for DINOv3 weight loading and feature equivalence with timm."""
+
 from typing import Any, cast
 
 import pytest

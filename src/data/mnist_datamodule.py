@@ -1,3 +1,5 @@
+"""MNIST DataModule."""
+
 from typing import Any
 
 import torch
@@ -137,3 +139,6 @@ class MNISTDataModule(LightningDataModule):
             pin_memory=self.hparams.pin_memory,
             shuffle=False,
         )
+
+
+__all__ = ["MNISTDataModule"]

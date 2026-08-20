@@ -1,3 +1,5 @@
+"""Rich terminal formatting utilities for Hydra configurations and interactive tags."""
+
 from collections.abc import Sequence
 from pathlib import Path
 
@@ -95,3 +97,6 @@ def enforce_tags(cfg: DictConfig, save_to_file: bool = False) -> None:
     if save_to_file:
         with open(Path(cfg.paths.output_dir, "tags.log"), "w", encoding="utf-8") as file:
             rich.print(cfg.tags, file=file)
+
+
+__all__ = ["enforce_tags", "print_config_tree"]

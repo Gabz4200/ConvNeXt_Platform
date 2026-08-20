@@ -1,3 +1,5 @@
+"""Evaluation entry point script for ConvNeXt Platform."""
+
 import os
 from typing import Any
 
@@ -76,3 +78,6 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
+
+
+__all__ = ["evaluate", "main"]

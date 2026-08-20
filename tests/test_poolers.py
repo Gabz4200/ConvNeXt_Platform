@@ -1,3 +1,5 @@
+"""Tests for spatial pooling and unpooling neural network components."""
+
 import pytest
 import torch
 import torch.nn.functional as F
