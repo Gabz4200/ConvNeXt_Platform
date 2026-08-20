@@ -6,23 +6,25 @@ Context and technical guidelines for AI coding agents working in the **ConvNeXt 
 
 ## 1. Project Overview
 
-**ConvNeXt Platform** is a research and training codebase for training ConvNeXt vision backbones and visual representations for **platformer games** (reinforcement learning & vision-based control), featuring DINOv3-compatible pre-trained weight loading, intermediate layer feature extraction, and PyTorch Lightning + Hydra training workflows.
+**ConvNeXt Platform** is a research and training codebase for vision-temporal models combining **ConvNeXt** vision backbones (with DINOv3 self-supervised visual priors) and **RWKV-7** linear attention recurrent blocks. It is designed for **gameplay action prediction and platformer control**, predicting 21-D gamepad vectors (17 boolean buttons + 2 dual-axis joysticks) from raw video frames and action trajectories, with support for offline sequence training, dataset streaming from NVIDIA NitroGen, and real-time online recurrent streaming inference.
 
 > **MANDATORY RULE — PyTorch Lightning, not plain PyTorch:** Every training, evaluation, and inference
 > path in this codebase MUST be driven by PyTorch Lightning (`LightningModule` + `Trainer`). Never
 > write manual training loops, raw `torch.no_grad()` inference pipelines, or bare `optimizer.step()`
-> code. Pure-`nn.Module` backbones (e.g. `src/models/components/convnext.py`) exist only as model
-> definitions and MUST always be wrapped in a `LightningModule` (e.g. `ConvNeXtLitModule`) and run
-> through `Trainer.fit`, `Trainer.test`, or `Trainer.predict`. Plain PyTorch is allowed only for
+> code. Pure-`nn.Module` backbones (e.g. `src/models/components/convnext_rwkv7.py`) exist only as model
+> definitions and MUST always be wrapped in a `LightningModule` (e.g. `ConvNeXtRWKV7GamepadLitModule`)
+> and run through `Trainer.fit`, `Trainer.test`, or `Trainer.predict`. Plain PyTorch is allowed only for
 > (a) defining `nn.Module` layer logic and (b) state-dict weight loading/saving I/O.
 
 ### Core Tech Stack
 - **Deep Learning Framework:** PyTorch >= 2.0.0, PyTorch Lightning >= 2.0.0
+- **Vision Backbone:** ConvNeXt (Tiny/Small/Base/Large) with DINOv3 weight ingestion (`facebook/dinov3-convnext-*-pretrain-lvd1689m`)
+- **Temporal Modeling:** RWKV-7 (Goose) linear attention recurrent blocks with fast parallel scans and recurrent state caching
+- **Spatial & Temporal Pooling:** `AdaptiveLearnedPool2d`, `LearnedWeightedGAP`, `CausalConv1d`, `CausalAdaptiveLearnedPool`
 - **Configuration & CLI:** Hydra 1.3 (`hydra-core`, `hydra-colorlog`, `hydra-optuna-sweeper`), OmegaConf
-- **Vision Backbones & Weights:** Custom ConvNeXt (DINOv3-compatible with intermediate layer extraction), HuggingFace Hub, `safetensors`, `timm`
-- **Data & Datasets:** HuggingFace `datasets`, `torchvision`, `torchmetrics`
-- **Dependency & Environment Management:** `uv`, `pyproject.toml`
-- **Code Quality & Testing:** `pytest`, `pre-commit` (Black 99 col, isort, flake8, docformatter, interrogate)
+- **Data & Streaming:** HuggingFace `datasets`, `huggingface-hub`, `pyarrow`, `pandas`, `pillow`, `torchvision`
+- **Packaging & Environment:** `uv`, `pyproject.toml` (package: `convnext-platform`), `MANIFEST.in`
+- **Code Quality & Testing:** `pytest`, `pyrefly`, `pre-commit` (Black 99 col, isort, flake8, docformatter, interrogate)
 
 ---
 
@@ -31,40 +33,57 @@ Context and technical guidelines for AI coding agents working in the **ConvNeXt 
 ```
 ConvNeXt_Platform/
 ├── .project-root               # Root indicator used by rootutils for PYTHONPATH resolution
-├── pyproject.toml              # Build metadata, dependencies, pytest & uv index config
+├── pyproject.toml              # Build metadata, dependencies, console scripts & uv config
+├── MANIFEST.in                 # Packaging manifest (includes src/configs, python modules)
 ├── Makefile                    # Standard automation targets (train, test, clean, format)
-├── configs/                    # Hydra configuration hierarchy
-│   ├── train.yaml              # Main training config entrypoint (defaults: data=cifar10, model=convnext)
-│   ├── eval.yaml               # Main evaluation config entrypoint
-│   ├── model/                  # Model configurations (convnext.yaml, convnext_embeds.yaml, mnist.yaml)
-│   ├── data/                   # DataModule configs (cifar10.yaml, mnist.yaml)
-│   ├── trainer/                # Trainer configs (default.yaml, cpu.yaml, gpu.yaml, ddp.yaml)
-│   ├── callbacks/              # Lightning callback configs (model_checkpoint.yaml, early_stopping.yaml)
-│   ├── logger/                 # Logger configs (tensorboard.yaml, wandb.yaml, csv.yaml, etc.)
-│   ├── debug/                  # Debugging presets (default.yaml -> fast_dev_run, limit.yaml, overfit.yaml)
-│   ├── experiment/             # Experiment overrides (version-controlled recipe presets)
-│   └── hparams_search/         # Hyperparameter search configs (Optuna sweeper)
+├── pyrefly.toml                # Type checking configuration
 ├── src/
-│   ├── train.py                # Main training entrypoint script (@hydra.main train.yaml)
-│   ├── eval.py                 # Main evaluation entrypoint script (@hydra.main eval.yaml)
+│   ├── configs/                # Hierarchical Hydra configurations (packaged inside src)
+│   │   ├── train.yaml          # Main training config entrypoint (defaults: data=cifar10, model=convnext)
+│   │   ├── eval.yaml           # Main evaluation config entrypoint
+│   │   ├── model/              # Model configs (convnext.yaml, convnext_rwkv7_gamepad*.yaml, mnist.yaml)
+│   │   ├── data/               # DataModule configs (cifar10.yaml, nitrogen.yaml, mnist.yaml)
+│   │   ├── trainer/            # Trainer configs (default.yaml, cpu.yaml, gpu.yaml, ddp.yaml)
+│   │   ├── callbacks/          # Lightning callback configs (model_checkpoint.yaml, early_stopping.yaml)
+│   │   ├── logger/             # Logger configs (tensorboard.yaml, wandb.yaml, csv.yaml, etc.)
+│   │   ├── debug/              # Debugging presets (default.yaml -> fast_dev_run, limit.yaml, overfit.yaml)
+│   │   ├── experiment/         # Experiment overrides (nitrogen_gamepad.yaml, example.yaml)
+│   │   └── hparams_search/     # Hyperparameter search configs (Optuna sweeper)
+│   ├── train.py                # Generic training CLI entrypoint (delegates to run_train_task)
+│   ├── train_nitrogen.py       # NitroGen training entrypoint (CLI + standalone train() API)
+│   ├── eval.py                 # Evaluation CLI entrypoint
 │   ├── models/
-│   │   ├── convnext_module.py  # ConvNeXtLitModule (LightningModule: classification + feature extraction)
-│   │   ├── mnist_module.py     # MNISTLitModule (baseline reference)
+│   │   ├── convnext_rwkv7_module.py # ConvNeXtRWKV7GamepadLitModule (BCE + MSE gamepad loss & metrics)
+│   │   ├── convnext_module.py  # ConvNeXtLitModule (classification + feature extraction)
+│   │   ├── mnist_module.py     # Baseline MNIST module
 │   │   └── components/
-│   │       ├── convnext.py     # Pure PyTorch ConvNeXt (DINOv3 weights & intermediate layers)
+│   │       ├── convnext_rwkv7.py # ConvNeXtRWKV7Gamepad, GamepadHead, _InputNormalize, GamepadStreamingState
+│   │       ├── convnext.py     # Pure PyTorch ConvNeXt + DINOv3 weight loader
+│   │       ├── poolers.py      # AdaptiveLearnedPool2d, LearnedWeightedGAP, CausalConv1d, CausalAdaptiveLearnedPool
+│   │       ├── rwkv7.py        # RWKV7Block, RWKV7BlockState, fast CPU/GPU parallel scans
 │   │       └── simple_dense_net.py
 │   ├── data/
-│   │   ├── cifar10_datamodule.py # CIFAR10DataModule (loads uoft-cs/cifar10 from HF Hub)
-│   │   └── mnist_datamodule.py
-│   └── utils/                  # Rich logging, instantiators, hyperparameter trackers
+│   │   ├── nitrogen_datamodule.py # NitroGenDataModule (streaming actions + video frames)
+│   │   ├── cifar10_datamodule.py  # CIFAR10DataModule (loads uoft-cs/cifar10 from HF Hub)
+│   │   ├── mnist_datamodule.py    # MNISTDataModule
+│   │   └── components/
+│   │       ├── nitrogen_dataset.py # NitroGenDataset (streaming tar.gz, load-or-skip real video, shuffle buffer)
+│   │       └── cifar10_dataset.py  # CIFAR10HFDataset
+│   └── utils/
+│       ├── trainer.py          # Shared run_train_task() lifecycle runner
+│       └── ...                 # Logging, instantiators, hyperparameter tracking
 └── tests/
     ├── conftest.py             # Shared fixtures (cfg_train, cfg_eval)
+    ├── test_convnext_rwkv7.py  # Backbone shape, 4D/5D, stem-bypass, streaming, gradient tests
+    ├── test_nitrogen.py        # NitroGen streaming, parquet parsing, real video loading, shuffle tests
+    ├── test_poolers.py         # Pooler forward, causality, gradient flow, and streaming tests
+    ├── test_rwkv7.py           # RWKV-7 block recurrence, state persistence, and gradient tests
     ├── test_configs.py         # Config validation & instantiation tests
     ├── test_datamodules.py     # DataModule batch shape and loading tests
     ├── test_dinov3_ricl_embeds.py # DINOv3 weight loading & timm equivalence tests (@pytest.mark.slow)
-    ├── test_eval.py            # End-to-end train + eval test
-    ├── test_sweeps.py          # Hydra Optuna sweeper integration tests
-    └── test_train.py           # Training step and fast_dev_run integration tests
+    ├── test_eval.py            # End-to-end evaluation pipeline tests
+    ├── test_sweeps.py          # Hydra Optuna sweeper tests
+    └── test_train.py           # Training pipeline integration tests
 ```
 
 ---
@@ -73,22 +92,29 @@ ConvNeXt_Platform/
 
 ### Package Management with `uv`
 
-The environment is managed using `uv`. CPU PyTorch wheels are configured by default in `pyproject.toml` via `[[tool.uv.index]]`.
+The environment is managed using `uv`. CPU PyTorch wheels are configured by default in `pyproject.toml`.
 
 ```bash
-# Create virtual environment and install all dependencies (including dev)
+# Create virtual environment and install all dependencies (including dev tools)
 uv sync --extra dev
 
 # Or install editable package in active environment
 uv pip install -e ".[dev]"
 ```
 
-### Environment Variables & Project Root
+### Kaggle & Remote Installation
 
-Every entrypoint (`src/train.py`, `src/eval.py`) calls `rootutils.setup_root(__file__, indicator=".project-root", pythonpath=True)`:
-- Guarantees the repository root is in `PYTHONPATH`.
-- Exposes `PROJECT_ROOT` environment variable used in `configs/paths/default.yaml`.
-- Loads optional `.env` file from the workspace root.
+The repository is packaged with setuptools and standard entry points:
+
+```bash
+# Install directly from GitHub in Kaggle notebooks or cloud environments
+pip install git+https://github.com/YourUsername/ConvNeXt_Platform.git
+
+# Available console scripts post-install:
+train-command          # General training (src.train:main)
+train-nitrogen         # NitroGen gamepad training (src.train_nitrogen:main)
+eval-command           # Model evaluation (src.eval:main)
+```
 
 ---
 
@@ -97,24 +123,46 @@ Every entrypoint (`src/train.py`, `src/eval.py`) calls `rootutils.setup_root(__f
 ### Training
 
 ```bash
-# Train default setup (ConvNeXt-Tiny on CIFAR-10)
+# Train default vision classification (ConvNeXt-Tiny on CIFAR-10)
 python src/train.py
 
-# Train on CPU explicitly
-python src/train.py trainer=cpu
+# Train NitroGen Gamepad model via experiment preset
+python src/train.py experiment=nitrogen_gamepad
 
-# Train on GPU / Multi-GPU (DDP)
+# Train NitroGen Gamepad model via dedicated entrypoint
+python src/train_nitrogen.py experiment=nitrogen_gamepad
+
+# Train NitroGen on real video frames from disk
+python src/train.py experiment=nitrogen_gamepad data.video_dir=/path/to/gameplay_frames
+
+# Unfreeze ConvNeXt backbone with differential learning rate
+python src/train.py model=convnext_rwkv7_gamepad_unfrozen model.convnext_lr=1e-5
+
+# Stem-bypass ablation (pooler directly feeds ConvNeXt stage 0)
+python src/train.py model=convnext_rwkv7_gamepad_bypass_stem
+
+# Train on GPU / Multi-GPU
 python src/train.py trainer=gpu trainer.devices=1
 python src/train.py trainer=ddp trainer.devices=2
+```
 
-# Override hyperparameters via CLI
-python src/train.py model.optimizer.lr=0.001 data.batch_size=64 trainer.max_epochs=20
+### Python API Training (No Hydra / Kaggle-Friendly)
 
-# Run specific experiment config
-python src/train.py experiment=example
+```python
+from src.train_nitrogen import train
 
-# Resume training from checkpoint
-python src/train.py ckpt_path=/path/to/checkpoint.ckpt
+results = train(
+    video_dir="/kaggle/input/gameplay-videos",
+    batch_size=32,
+    max_samples=100000,
+    steps_per_sample=16,
+    single_step=True,
+    pretrained_dinov3=True,
+    freeze_convnext=True,
+    lr=1e-3,
+    max_epochs=10,
+    accelerator="auto",
+)
 ```
 
 ### Evaluation
@@ -127,111 +175,81 @@ python src/eval.py ckpt_path=/path/to/best_model.ckpt
 python src/eval.py ckpt_path=/path/to/best_model.ckpt trainer=cpu
 ```
 
-### Debugging Presets
-
-Use Hydra `debug` configs for rapid diagnostics:
-
-```bash
-# Fast dev run: runs 1 train, 1 val, 1 test batch (disables checkpointing and logging)
-python src/train.py debug=default
-
-# Limit batches: runs only 10% of batches per epoch
-python src/train.py debug=limit
-
-# Overfit batches: overfits on 10 batches to test model convergence
-python src/train.py debug=overfit
-
-# Profiler: PyTorch profiler enabled
-python src/train.py debug=profiler
-```
-
-### Hyperparameter Search (Optuna)
-
-```bash
-# Run Optuna hyperparameter sweep (multirun mode -m)
-python src/train.py -m hparams_search=mnist_optuna
-```
-
 ---
 
 ## 5. Testing Instructions
 
 ### Test Suites and Markers
 
-Tests use `pytest`. Markers are configured in `pyproject.toml`.
+Tests use `pytest`.
 
-- **Fast tests (unit & config checks):** Exclude network / heavy downloads.
-- **Slow tests (`@pytest.mark.slow`):** Include HuggingFace Hub downloads and DINOv3 weight loading.
+- **Fast tests:** Unit tests, component shape/gradient checks, streaming tests, config validation.
+- **Slow tests (`@pytest.mark.slow`):** Hub downloads and DINOv3 weight verification.
 
 ```bash
-# Run standard fast test suite (skipping slow tests)
+# Run all fast tests
 pytest -k "not slow"
 # or via Makefile
 make test
 
-# Run full test suite (including slow tests)
+# Run full test suite including slow tests
 pytest
 # or via Makefile
 make test-full
 
-# Run specific test file
-pytest tests/test_configs.py
-pytest tests/test_datamodules.py
-pytest tests/test_train.py
+# Run specific domain test suites
+pytest tests/test_convnext_rwkv7.py
+pytest tests/test_nitrogen.py
+pytest tests/test_poolers.py
+pytest tests/test_rwkv7.py
+```
 
-# Run specific test case with verbose output
-pytest tests/test_configs.py::test_train_config -vv -s
+### Type Checking
 
-# Run DINOv3 Hub weight loading verification (requires internet access)
-pytest tests/test_dinov3_ricl_embeds.py -s
+```bash
+uv run pyrefly check src/ tests/
 ```
 
 ---
 
-## 6. Code Style & Standards
+## 6. Architecture & Implementation Patterns
 
-### Formatting and Linters
+### 1. Gamepad Model Architecture (`src/models/components/convnext_rwkv7.py`)
+- **Input Normalization:** `_InputNormalize` applies DINOv3 `DINOv3ViTImageProcessorFast` preprocessing (rescales uint8 $[0, 255] \to [0, 1]$ when needed, normalizes with ImageNet mean `(0.485, 0.456, 0.406)` and std `(0.229, 0.224, 0.225)`).
+- **Adaptive Spatial Pooling:** `AdaptiveLearnedPool2d` downsamples arbitrary-resolution inputs to a fixed resolution ($224 \times 224$ standard, or $56 \times 56$ when bypassing stem).
+- **ConvNeXt Backbone:** DINOv3-compatible ConvNeXt backbone with pre-trained weights loaded from `facebook/dinov3-convnext-tiny-pretrain-lvd1689m`.
+- **Decoupled Autograd Flow:** When `freeze_convnext=True`, parameters have `requires_grad=False` and `convnext.eval()` is maintained. PyTorch autograd graph computation is preserved through frozen convolutions, allowing backpropagation gradients to flow back into `AdaptiveLearnedPool2d`.
+- **Spatial Feature Aggregation:** `LearnedWeightedGAP(kernel_size=3, num_output=1, concat_gap=True)` pools 2D spatial feature maps using learned spatial attention weights combined with uniform global average pooling.
+- **Temporal 1D Convolution:** `CausalConv1d(kernel_size=3)` with residual shortcut and LayerNorm.
+- **RWKV-7 Recurrent Reasoning:** 4x `RWKV7Block` layers with residual streams and linear attention recurrence.
+- **Gamepad Projection Head:** `GamepadHead` mapping representations to 21 outputs: 17 unconstrained button logits ($L_{\text{BCE}}$) and 4 continuous joystick coordinates ($L_{\text{MSE}}$) bounded to $[-1.0, 1.0]$ via `Tanh`.
+- **Online Recurrent Streaming:** `init_streaming_state(batch_size, device, dtype)` and `step(x_t, state)` caching `CausalConv1d` receptive field buffers and `RWKV7BlockState` recurrent states for both single 4D frames $(B, C, H, W)$ and N-frame 5D chunks $(B, T, C, H, W)$.
 
-Adhere to the configured `pre-commit` hooks:
-- **Line Length:** `99` characters (Black, Flake8, docformatter).
-- **Import Sorting:** `isort` with `--profile black`.
-- **Docstrings:** Sphinx style formatting (`docformatter`), minimum 80% coverage enforced by `interrogate`.
-- **Typing:** Strict type annotations for function signatures, return types, and module arguments.
+### 2. NitroGen Streaming Dataset (`src/data/components/nitrogen_dataset.py`)
+- **Action Tables:** Streams `actions_processed.parquet` (falling back to `actions_raw.parquet`) and `metadata.json` from `nvidia/NitroGen` tar.gz shards on HuggingFace Hub via `HfFileSystem`.
+- **Single-step Unrolling:** When `single_step=True`, each 16-step sequence window is unrolled so that each forward pass processes 1 frame $(3, H, W)$ and predicts 1 Gamepad State $(21,)$, turning 1 window sample into 16 individual training samples.
+- **Real Video Loading ("Load or Skip"):** When `video_dir` is provided, loads real video frame images matching metadata (`video_id`, `chunk_id`, `start_frame + step_i`). If frames for a chunk are missing from disk, the window is cleanly skipped and logged (`logger.info`), enabling training on partial video downloads without corrupting sequences.
+- **Episode-Level Shuffling:** Preserves strict chronological frame ordering within every 16-step episode ($t_0 \to t_1 \to \dots \to t_{15}$) for continuous RWKV-7 temporal mixing, while shuffling episode window order across different gameplay videos via a streaming reservoir shuffle buffer (`shuffle_buffer_size=1000`).
 
-```bash
-# Run all pre-commit hooks manually
-pre-commit run -a
-# or via Makefile
-make format
-```
+### 3. Gamepad LightningModule (`src/models/convnext_rwkv7_module.py`)
+- **Loss:** Combined $L = L_{\text{BCE}}(\text{buttons}) + \lambda L_{\text{MSE}}(\text{joysticks})$.
+- **Metrics:** `MultilabelAccuracy(num_labels=17)` on buttons (flattened to `(-1, 17)` for compatibility with both 2D single-step and 3D temporal sequences) and `MeanMetric` MSE on joysticks.
+- **Differential Optimizer:** Supports distinct learning rate for ConvNeXt backbone via `convnext_lr` when fine-tuning unfrozen.
 
-### Engineering Rules
+### 4. Shared Task Runner (`src/utils/trainer.py`)
+- `run_train_task(cfg, task_name)`: Deduplicated Hydra train/test lifecycle runner used by both `src/train.py` and `src/train_nitrogen.py`.
+
+---
+
+## 7. Engineering Rules & Best Practices
+
 1. **Fail Fast:** Do not catch generic exceptions (`except Exception:`) or hide failures behind silent fallbacks. Allow invalid configurations and missing attributes to raise immediately.
 2. **Single Source of Truth:** Infer dependent parameters (e.g. `num_classes` in `ConvNeXtLitModule` inferred from `net.head.out_features`) rather than duplicating them across configs.
 3. **No Dead Comments / Obvious Restatements:** Avoid narrative storytelling, decorative ASCII separators, or comments that merely restate symbol names.
 4. **Hydra Interpolation:** Tie scheduler lengths dynamically to trainer configurations using variable interpolation (`T_max: ${trainer.max_epochs}`).
-5. **PyTorch Lightning, Not Plain PyTorch:** Drive ALL training, evaluation, and inference through Lightning (`LightningModule` + `Trainer`). No manual training loops, raw `torch.no_grad()` inference, or bare `optimizer.step()` pipelines. Wrap pure-`nn.Module` backbones in a `LightningModule` and route inference through `Trainer.predict` (e.g. DINOv3 feature extraction via `ConvNeXtLitModule.predict_step`).
-
----
-
-## 7. Key Architecture & Implementation Patterns
-
-### 1. Backbone Component (`src/models/components/convnext.py`)
-- Pure `nn.Module` implementation of ConvNeXt.
-- Supports both classification heads (`num_classes > 0`) and feature extraction (`num_classes = 0`).
-- Provides `get_intermediate_layers()` and `forward_features()` with per-stage normalization compatible with DINOv3 evaluation protocols.
-- Weight loading utilities (`load_dinov3_weights`) map both `timm` format and Facebook HF format checkpoints to the internal module structure.
-
-### 2. LightningModule (`src/models/convnext_module.py`)
-- Standardized lifecycle: `model_step`, `training_step`, `validation_step`, `test_step`, `predict_step`, and `configure_optimizers`.
-- Two modes inferred from the backbone head: classification (`net.head` is `nn.Linear`) and feature extraction (`net.head` is `nn.Identity`, i.e. `num_classes=0`). Feature-extraction mode runs DINOv3-compatible embedding inference through `predict_step` / `Trainer.predict` (see `configs/model/convnext_embeds.yaml`).
-- Tracks loss via `MeanMetric`, accuracy via `Accuracy(task="multiclass", num_classes=...)`, and peak validation accuracy via `MaxMetric`.
-- Supports `torch.compile` during `setup(stage)` when enabled in config (`compile: true`).
-
-### 3. DataModule (`src/data/cifar10_datamodule.py`)
-- Wraps HuggingFace dataset splits (`uoft-cs/cifar10`) using a lightweight `Dataset` class (`CIFAR10HFDataset`) applying torchvision transforms on-the-fly.
-- **Deferred Imports:** Keeps `datasets` and heavy imports inside `prepare_data()` and `setup()` to ensure top-level module import remains fast.
-- **Explicit None Checks:** Uses `if self.data_train is not None:` instead of truthiness testing (`if self.data_train:`), as custom datasets can evaluate to `False` when empty.
+5. **PyTorch Lightning, Not Plain PyTorch:** Drive ALL training, evaluation, and inference through Lightning (`LightningModule` + `Trainer`). No manual training loops, raw `torch.no_grad()` inference, or bare `optimizer.step()` pipelines.
+6. **Chronological Frame Integrity:** Never shuffle individual frames within a gameplay video episode. Shuffling operates at the episode/window buffer level to maintain continuous temporal mixing for RWKV-7.
+7. **Sphinx Docstrings:** Docstring parameter tags must have a space after the colon (`:param name: desc`, `:return: desc`).
 
 ---
 
@@ -240,6 +258,8 @@ make format
 | Issue | Cause | Solution |
 |---|---|---|
 | `UnpicklingError: Weights only load failed` | PyTorch 2.6+ defaults `torch.load(..., weights_only=True)`. | Use `torch.serialization.add_safe_globals` or load state dicts via safetensors/timm. |
-| Spatial dimension too small in ConvNeXt | ConvNeXt stem (stride 4) + 3 downsampling stages (stride 2 each) = 32x reduction. Input smaller than 32x32 collapses to 0x0. | Ensure input image resolution is at least 32x32 (e.g. resize MNIST 28x28 -> 32x32). |
+| Spatial dimension too small in ConvNeXt | ConvNeXt stem (stride 4) + 3 downsampling stages (stride 2 each) = 32x reduction. Input smaller than 32x32 collapses to 0x0. | Ensure input image resolution is at least 32x32, or use `AdaptiveLearnedPool2d` with `output_size=(224, 224)`. |
+| Missing video frames on disk | Training on a subset of downloaded videos. | Configure `data.video_dir`. NitroGen dataset cleanly skips and logs missing chunks with full visibility. |
+| MultilabelAccuracy shape error on sequences | Torchmetrics MultilabelAccuracy validates `dim=1 == num_labels`. | Reshape sequence tensors to `(-1, 17)` before passing to metric. |
 | Empty dataset evaluation error | Direct truthiness checks `if not dataset:` trigger `len(dataset) == 0`. | Always guard with explicit identity checks: `if dataset is None:`. |
 | Missing logger directory / rank_zero error | Running without logger config defaults to console-only logging. | Pass `logger=csv` or `logger=tensorboard` if metric persistence is required. |

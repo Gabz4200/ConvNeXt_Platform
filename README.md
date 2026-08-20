@@ -11,7 +11,7 @@
 [![isort](https://img.shields.io/badge/%20imports-isort-%231674b1?style=flat&labelColor=ef8336)](https://pycqa.github.io/isort/)
 [![license](https://img.shields.io/badge/License-MIT-green.svg?labelColor=gray)](LICENSE)
 
-Training **ConvNeXt** vision backbones and visual representations for **platformer games** (reinforcement learning & vision-based control), featuring **DINOv3** representation loading, intermediate feature extraction, and modular PyTorch Lightning + Hydra training workflows.
+Vision-temporal gamepad controller models combining **ConvNeXt** visual backbones (with **DINOv3** self-supervised priors) and **RWKV-7** linear attention recurrent blocks for **platformer gameplay and behavioral cloning**, with **NVIDIA NitroGen** dataset streaming and real-time online recurrent streaming inference.
 
 </div>
 
@@ -21,20 +21,70 @@ Training **ConvNeXt** vision backbones and visual representations for **platform
 
 ## 📌 Overview
 
-**ConvNeXt Platform** is dedicated to training and fine-tuning ConvNeXt visual encoders for playing **platformer games** via vision-based reinforcement learning and representation learning.
+**ConvNeXt Platform** is a research and production codebase for training vision-temporal policies and controllers for gameplay and platformer games.
 
-By leveraging modern pure-convolutional architectures (ConvNeXt) and self-supervised visual priors (such as DINOv3 embeddings and intermediate feature layers), the codebase provides the visual representation pipeline and training infrastructure required to perceive game scenes and drive platformer policies.
+By fusing modern pure-convolutional visual encoders (**ConvNeXt** with **DINOv3** self-supervised representations), learned adaptive spatial pooling, and fast linear-attention recurrent reasoning (**RWKV-7** Goose blocks), the model predicts full 21-D standard gamepad states (17 boolean buttons + 2 dual-axis joysticks bounded in $[-1.0, 1.0]$) directly from raw video streams and temporal action sequences.
+
+```
+┌─────────────────────────┐
+│ Input Frame (B, 3, H, W)│ (uint8 [0, 255] or float32 [0, 1])
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│     _InputNormalize     │ (DINOv3 ImageNet mean/std normalization)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│  AdaptiveLearnedPool2d  │ (adaptive learned downsampling to 224x224)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│     DINOv3 ConvNeXt     │ (pre-trained visual hierarchy, frozen or fine-tuned)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│    LearnedWeightedGAP   │ (spatial attention + global average pooling)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│      CausalConv1d       │ (temporal 1D convolution + residual shortcut)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│     4x RWKV-7 Blocks    │ (linear attention temporal mixing & recurrent state)
+└────────────┬────────────┘
+             │
+             ▼
+┌─────────────────────────┐
+│       GamepadHead       │
+└────────────┬────────────┘
+             │
+             ├──────────────────────────────────────────┐
+             ▼                                          ▼
+┌───────────────────────────┐             ┌───────────────────────────┐
+│ 17 Binary Button Logits   │             │ 4 Continuous Joystick Axes│
+│ (D-pad, Face, Shoulders)  │             │ (Left & Right Sticks in   │
+│ Loss: BCEWithLogitsLoss   │             │  [-1.0, 1.0] via Tanh)    │
+│ Metric: MultilabelAccuracy│             │ Loss: MSELoss             │
+└───────────────────────────┘             └───────────────────────────┘
+```
 
 ### Key Capabilities
 
-- 🎮 **Platformer Vision & RL Backbone:** ConvNeXt backbone engineered to process visual game frames, extract spatial hierarchy features, and serve as the visual encoder for downstream reinforcement learning agents.
-- 🧬 **DINOv3 Representation & Intermediate Layers:** Pure PyTorch ConvNeXt supporting flexible depths, stage dimensions, LayerScale, stochastic depth (DropPath), and per-stage intermediate layer extraction matching DINOv3 evaluation protocols.
-- 🔄 **Pre-trained Weight Ingestion:** Native loaders for DINOv3 ConvNeXt weights hosted on Hugging Face Hub in both `timm` format (`timm/convnext_tiny.dinov3_lvd1689m`) and official Facebook format (`facebook/dinov3-convnext-tiny-pretrain-lvd1689m`).
-- 📦 **Hugging Face Hub DataModules:** Integrated streaming and batch loading for vision datasets (such as CIFAR-10 `uoft-cs/cifar10`) with deferred loading and torchvision transforms.
-- ⚙️ **Hydra 1.3 Configuration Engine:** Dynamic composition, CLI overrides, variable interpolation, and experiment presets.
-- ⚡ **PyTorch Lightning 2.x Ecosystem:** Multi-GPU (DDP), CPU, MPS, mixed precision (AMP 16-bit/bf16), gradient accumulation, and `torch.compile` support.
-- 📊 **Experiment Tracking & MLOps:** Seamless integration with TensorBoard, Weights & Biases, MLflow, CSVLogger, Comet, and Neptune.
-- 🎯 **Automated Hyperparameter Optimization:** Optuna sweeps via `hydra-optuna-sweeper`.
+- 🎮 **21-D Gamepad Controller Head:** Direct multi-task prediction of 17 boolean gamepad buttons (D-pad, Face, Triggers, Bumpers, Sticks, Menu) and 4 continuous joystick axes ($[-1.0, 1.0]$ via `Tanh`).
+- ⚡ **RWKV-7 Recurrent Reasoning:** Temporal mixing across video frames using RWKV-7 (Goose) blocks with fast parallel scans for training and $O(1)$ recurrent step updates for inference.
+- 🧬 **DINOv3 Pre-trained Visual Priors:** Native weight loading from `facebook/dinov3-convnext-tiny-pretrain-lvd1689m` and timm checkpoints with intermediate feature extraction.
+- 🔄 **Decoupled Autograd Flow:** Trainable `AdaptiveLearnedPool2d` receives backpropagation gradients through frozen ConvNeXt weights (`freeze_convnext=True`), enabling spatial pooling adaptation without corrupting pre-trained features. Supports differential learning rates (`convnext_lr`) for full fine-tuning.
+- 📺 **NitroGen Dataset Streaming:** Direct streaming of action annotations from Hugging Face Hub (`nvidia/NitroGen` tar.gz shards) paired with real gameplay video frames from disk via a robust **"Load or Skip"** policy with full logging.
+- ⏱️ **Episode-Level Shuffling:** Preserves strict chronological frame sequence ($t_0 \to t_1 \to \dots \to t_{15}$) within every 16-step episode window for continuous temporal mixing, while decorrelating batches across different videos via a streaming reservoir buffer.
+- 🚀 **Online Recurrent Streaming Inference:** Native `init_streaming_state()` and `step(x_t, state)` API maintaining rolling causal convolution buffers and RWKV-7 state tuples for live frame-by-frame and chunk-by-chunk deployment.
+- ⚙️ **Hydra 1.3 + Lightning 2.x:** Compositional YAML configs, CLI overrides, multi-GPU (DDP), mixed precision (AMP 16-bit/bf16), and `torch.compile` support.
 
 <br>
 
@@ -44,254 +94,188 @@ By leveraging modern pure-convolutional architectures (ConvNeXt) and self-superv
 
 ```
 ConvNeXt_Platform/
-├── configs/                     # Hierarchical Hydra configurations
-│   ├── train.yaml               # Default training entry config (data: cifar10, model: convnext)
-│   ├── eval.yaml                # Default evaluation entry config
-│   ├── model/                   # Model architectures (convnext.yaml, mnist.yaml)
-│   ├── data/                    # Dataset configs (cifar10.yaml, mnist.yaml)
-│   ├── trainer/                 # Lightning Trainer configurations (default, cpu, gpu, ddp, mps)
-│   ├── callbacks/               # Checkpointing, early stopping, progress bars
-│   ├── logger/                  # Experiment loggers (wandb, tensorboard, csv, mlflow, etc.)
-│   ├── debug/                   # Debugging presets (default/fast_dev_run, limit, overfit)
-│   ├── experiment/              # Version-controlled experiment recipe overrides
-│   └── hparams_search/          # Hyperparameter search configs (Optuna)
+├── pyproject.toml               # Package configuration (convnext-platform) & CLI scripts
+├── MANIFEST.in                 # Packaging manifest (includes configs and assets)
+├── Makefile                    # Automation targets (train, test, format, clean)
 ├── src/
-│   ├── train.py                 # Training entrypoint script
-│   ├── eval.py                  # Evaluation entrypoint script
+│   ├── configs/                # Hierarchical Hydra configurations (packaged inside src)
+│   │   ├── train.yaml          # Default training config
+│   │   ├── eval.yaml           # Evaluation config
+│   │   ├── model/              # convnext_rwkv7_gamepad*.yaml, convnext.yaml, mnist.yaml
+│   │   ├── data/               # nitrogen.yaml, cifar10.yaml, mnist.yaml
+│   │   ├── trainer/            # default.yaml, cpu.yaml, gpu.yaml, ddp.yaml
+│   │   └── experiment/         # nitrogen_gamepad.yaml, example.yaml
+│   ├── train.py                # Main training CLI entrypoint
+│   ├── train_nitrogen.py       # NitroGen training entrypoint (CLI + programmatic train() API)
+│   ├── eval.py                 # Model evaluation script
 │   ├── models/
-│   │   ├── convnext_module.py   # ConvNeXtLitModule (LightningModule for training & evaluation)
-│   │   ├── mnist_module.py      # Baseline module
+│   │   ├── convnext_rwkv7_module.py # ConvNeXtRWKV7GamepadLitModule (BCE + MSE gamepad loss)
+│   │   ├── convnext_module.py  # ConvNeXtLitModule (vision classifier & embeddings)
 │   │   └── components/
-│   │       ├── convnext.py      # Pure PyTorch ConvNeXt + DINOv3 weight loader
-│   │       └── simple_dense_net.py
+│   │       ├── convnext_rwkv7.py # ConvNeXtRWKV7Gamepad, GamepadHead, _InputNormalize
+│   │       ├── convnext.py     # Pure PyTorch ConvNeXt (DINOv3 weight ingestion)
+│   │       ├── poolers.py      # AdaptiveLearnedPool2d, LearnedWeightedGAP, CausalConv1d
+│   │       └── rwkv7.py        # RWKV7Block, parallel scans & recurrent states
 │   ├── data/
-│   │   ├── cifar10_datamodule.py# Hugging Face Hub CIFAR-10 DataModule
-│   │   └── mnist_datamodule.py  # MNIST DataModule
-│   └── utils/                   # Logging, instantiators, hyperparameter tracking
-├── tests/                       # Pytest test suite
-│   ├── test_configs.py          # Config validation & instantiation tests
-│   ├── test_datamodules.py      # DataModule tests
-│   ├── test_dinov3_ricl_embeds.py # DINOv3 weight loading & timm equivalence tests
-│   ├── test_eval.py             # Evaluation pipeline integration tests
-│   └── test_train.py            # Training pipeline integration tests
-├── pyproject.toml               # Project metadata, dependencies, and tool settings
-└── Makefile                     # Automation commands (train, test, format, clean)
+│   │   ├── nitrogen_datamodule.py # NitroGenDataModule (streaming actions + video frames)
+│   │   ├── cifar10_datamodule.py  # CIFAR10DataModule
+│   │   └── components/
+│   │       └── nitrogen_dataset.py # NitroGenDataset (streaming tar.gz, load-or-skip, shuffle buffer)
+│   └── utils/
+│       ├── trainer.py          # Shared run_train_task() lifecycle runner
+│       └── ...
+└── tests/                      # Behavioral pytest test suite (279 passed)
 ```
 
 <br>
 
 ---
 
-## 🚀 Quickstart & Installation
+## 🚀 Installation
 
-### 1. Environment Setup with `uv` (Recommended)
+### 1. Local Setup with `uv` (Recommended)
 
 ```bash
 # Clone the repository
 git clone https://github.com/YourUsername/ConvNeXt_Platform.git
 cd ConvNeXt_Platform
 
-# Create virtual environment and install all dependencies (including dev tools)
+# Install all dependencies with uv
 uv sync --extra dev
 ```
 
-### 2. Conda / Pip Alternative
+### 2. Kaggle & Cloud Installation
+
+Install directly from GitHub into Kaggle notebooks, Colab, or remote cloud servers:
 
 ```bash
-# Using Conda
-conda env create -f environment.yaml -n convnext
-conda activate convnext
+pip install git+https://github.com/YourUsername/ConvNeXt_Platform.git
 
-# Using Pip in editable mode
-pip install -e ".[dev]"
+# Available console scripts:
+train-command          # General training (src.train:main)
+train-nitrogen         # NitroGen gamepad training (src.train_nitrogen:main)
+eval-command           # Model evaluation (src.eval:main)
 ```
 
 <br>
 
 ---
 
-## 💻 Training & Running Experiments
+## 💻 Training Workflows
 
-The platform uses Hydra for configuration composition. Any parameter can be overridden directly from the command line.
-
-### Basic Training
+### 1. Training NitroGen Gamepad via Hydra
 
 ```bash
-# Train default model (ConvNeXt-Tiny on CIFAR-10)
-python src/train.py
+# Train on NitroGen dataset with default frozen DINOv3 ConvNeXt
+python src/train.py experiment=nitrogen_gamepad
 
-# Or via Makefile
-make train
+# Train on real video frames from disk
+python src/train.py experiment=nitrogen_gamepad data.video_dir=/path/to/gameplay_frames
+
+# Unfreeze ConvNeXt backbone with differential learning rate
+python src/train.py model=convnext_rwkv7_gamepad_unfrozen model.convnext_lr=1e-5
+
+# Stem-bypass ablation (pooler directly feeds ConvNeXt stage 0)
+python src/train.py model=convnext_rwkv7_gamepad_bypass_stem
+
+# Train on GPU / Multi-GPU
+python src/train.py experiment=nitrogen_gamepad trainer=gpu trainer.devices=1
+python src/train.py experiment=nitrogen_gamepad trainer=ddp trainer.devices=2
 ```
 
-### Hardware Accelerators
+### 2. Python API (Kaggle & Programmatic Usage)
 
-```bash
-# Train on CPU
-python src/train.py trainer=cpu
+Train directly without Hydra using `train()`:
 
-# Train on 1 GPU
-python src/train.py trainer=gpu
+```python
+from src.train_nitrogen import train
 
-# Train on Multi-GPU with Distributed Data Parallel (DDP)
-python src/train.py trainer=ddp trainer.devices=2
+results = train(
+    video_dir="/kaggle/input/gameplay-videos",
+    batch_size=32,
+    max_samples=100000,          # Bounded sample count (or None for full dataset)
+    steps_per_sample=16,         # 16-step sequence windows
+    single_step=True,            # 1 gamepad state per forward pass
+    shuffle=True,                # Episode-level shuffle buffer
+    shuffle_buffer_size=1000,
+    pretrained_dinov3=True,      # Loads DINOv3 pre-trained weights
+    freeze_convnext=True,        # Freezes ConvNeXt while training pooler & RWKV-7
+    convnext_lr=1e-4,            # Differential LR when unfrozen
+    lr=1e-3,
+    max_epochs=10,
+    accelerator="auto",
+)
 
-# Train on Apple Silicon (MPS)
-python src/train.py trainer=mps
+model = results["model"]
+metrics = results["metrics"]
 ```
 
-### Hyperparameter Overrides
+### 3. Training Vision Classification Baseline (CIFAR-10)
 
 ```bash
-# Modify learning rate, batch size, and maximum epochs
-python src/train.py model.optimizer.lr=1e-3 data.batch_size=64 trainer.max_epochs=50
-
-# Train with Automatic Mixed Precision (FP16 or BF16)
-python src/train.py trainer=gpu +trainer.precision=16-mixed
-
-# Enable PyTorch 2.0 graph compilation
-python src/train.py model.compile=true
-```
-
-### Using Experiment Configs
-
-Version-controlled experiment recipes reside in [`configs/experiment/`](configs/experiment/):
-
-```bash
-# Run a specific experiment recipe
-python src/train.py experiment=example
-```
-
-### Resuming from Checkpoints
-
-```bash
-# Resume training from a saved checkpoint
-python src/train.py ckpt_path="/path/to/checkpoint.ckpt"
+# Train ConvNeXt-Tiny classifier on CIFAR-10
+python src/train.py data=cifar10 model=convnext
 ```
 
 <br>
 
 ---
 
-## 📈 Evaluation
+## ⏱️ Real-Time Online Recurrent Streaming Inference
 
-Evaluate trained checkpoints against test splits:
+The model supports frame-by-frame and chunk-by-chunk live inference, caching causal convolution buffers and RWKV-7 recurrent states:
 
-```bash
-# Evaluate checkpoint on test set
-python src/eval.py ckpt_path="/path/to/checkpoint.ckpt"
+```python
+import torch
+from src.models.components.convnext_rwkv7 import ConvNeXtRWKV7Gamepad
 
-# Evaluate on CPU
-python src/eval.py ckpt_path="/path/to/checkpoint.ckpt" trainer=cpu
+model = ConvNeXtRWKV7Gamepad(pretrained_dinov3=True).eval()
+
+# Initialize recurrent state for 1 stream
+state = model.init_streaming_state(batch_size=1, device=torch.device("cpu"))
+
+# Stream incoming live game frames (3, 224, 224)
+for frame in live_game_frame_stream():
+    frame_tensor = frame.unsqueeze(0)  # Shape: (1, 3, 224, 224)
+    (gamepad_21, buttons_17, joysticks_4), state = model.step(frame_tensor, state)
+    
+    # Process predictions
+    button_presses = (buttons_17.sigmoid() > 0.5).squeeze(0)
+    left_stick = joysticks_4[0, :2]    # (X, Y) in [-1.0, 1.0]
+    right_stick = joysticks_4[0, 2:]   # (X, Y) in [-1.0, 1.0]
 ```
 
 <br>
 
 ---
 
-## 🔍 Debugging & Diagnostics
+## 🧪 Testing & Validation
 
-Rapid diagnostic presets are available under [`configs/debug/`](configs/debug/):
-
-```bash
-# Fast dev run: 1 train batch, 1 val batch, 1 test batch (bypasses loggers/checkpoints)
-python src/train.py debug=default
-
-# Limit batches: train on only 10% of the dataset
-python src/train.py debug=limit
-
-# Overfit verification: overfit on 10 batches to verify gradient flow and convergence
-python src/train.py debug=overfit
-
-# Profile execution bottlenecks with PyTorch Profiler
-python src/train.py debug=profiler
-
-# Detect tensor anomalies (NaNs / infinities)
-python src/train.py +trainer.detect_anomaly=true
-```
-
-<br>
-
----
-
-## 📊 Experiment Tracking & Logging
-
-PyTorch Lightning supports various experiment tracking platforms:
+The comprehensive test suite covers backbone forward passes, 4D/5D sequence handling, stem-bypass ablation, frozen autograd flow, real video frame loading, load-or-skip error handling, and Hydra configuration validation:
 
 ```bash
-# Weights & Biases
-python src/train.py logger=wandb
-
-# TensorBoard
-python src/train.py logger=tensorboard
-
-# CSV Logging
-python src/train.py logger=csv
-
-# Multiple loggers simultaneously
-python src/train.py logger=many_loggers
-```
-
-Configure logger entities, project names, and credentials in [`configs/logger/`](configs/logger/).
-
-<br>
-
----
-
-## 🎯 Hyperparameter Sweeps (Optuna)
-
-Execute automated hyperparameter optimization using Hydra's Optuna sweeper:
-
-```bash
-# Run multi-trial Optuna sweep across learning rates and batch sizes
-python src/train.py -m hparams_search=mnist_optuna
-```
-
-Results are saved to `logs/task_name/multiruns/`.
-
-<br>
-
----
-
-## 🧪 Testing
-
-The test suite covers configuration validation, model construction, DINOv3 weight loading equivalence, and training execution:
-
-```bash
-# Run fast tests (skips slow downloads)
+# Run all fast tests (skips slow downloads)
 pytest -k "not slow"
 # or via Makefile
 make test
 
-# Run full test suite including DINOv3 Hub weight loading verification
+# Run full test suite including DINOv3 weight loading verification
 pytest
 # or via Makefile
 make test-full
 
-# Run individual test modules
-pytest tests/test_configs.py
-pytest tests/test_datamodules.py
-pytest tests/test_dinov3_ricl_embeds.py
+# Run specific domain test suites
+pytest tests/test_convnext_rwkv7.py
+pytest tests/test_nitrogen.py
+pytest tests/test_poolers.py
+pytest tests/test_rwkv7.py
 ```
 
-<br>
-
----
-
-## 🛠️ Code Quality & Standards
-
-Pre-commit hooks ensure consistent formatting and type hygiene:
+### Type Checking
 
 ```bash
-# Run formatting and linting checks across all files
-pre-commit run -a
-# or via Makefile
-make format
+uv run pyrefly check src/ tests/
 ```
-
-- **Formatting:** Black (`line-length = 99`), `isort` (`--profile black`).
-- **Docstrings:** Sphinx-style formatting via `docformatter`, coverage verified with `interrogate`.
-- **Linting:** Flake8, Bandit security checks.
 
 <br>
 
