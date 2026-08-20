@@ -51,7 +51,7 @@ def test_convnext_feature_extraction_predict() -> None:
     Instantiates `model=convnext_embeds` through Hydra and drives inference with `Trainer.predict`,
     verifying the DINOv3-compatible backbone is used via Lightning.
     """
-    with initialize(version_base="1.3", config_path="../configs"):
+    with initialize(version_base="1.3", config_path="../src/configs"):
         cfg = compose(
             config_name="train.yaml",
             return_hydra_config=True,
@@ -80,7 +80,7 @@ def test_convnext_feature_extraction_predict() -> None:
 
 def test_convnext_rwkv7_gamepad_predict() -> None:
     """Gamepad model config instantiates via Hydra and runs prediction through Lightning predict."""
-    with initialize(version_base="1.3", config_path="../configs"):
+    with initialize(version_base="1.3", config_path="../src/configs"):
         cfg = compose(
             config_name="train.yaml",
             return_hydra_config=True,

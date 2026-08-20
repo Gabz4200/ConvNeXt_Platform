@@ -356,7 +356,7 @@ class TestHydraInstantiation:
         ],
     )
     def test_instantiate_gamepad_configs(self, model_config: str) -> None:
-        with initialize(version_base="1.3", config_path="../configs"):
+        with initialize(version_base="1.3", config_path="../src/configs"):
             cfg = compose(
                 config_name="train.yaml",
                 return_hydra_config=True,

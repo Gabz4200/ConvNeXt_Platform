@@ -16,7 +16,7 @@ from src.utils.trainer import run_train_task
 log = RankedLogger(__name__, rank_zero_only=True)
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="train.yaml")
 def main(cfg: DictConfig) -> float | None:
     """Main entry point for training.
 

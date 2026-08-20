@@ -228,7 +228,7 @@ def test_train_nitrogen_custom_hparams() -> None:
 
 def test_nitrogen_hydra_configs() -> None:
     """Test Hydra composition and instantiation for nitrogen data and experiment configs."""
-    with initialize(version_base="1.3", config_path="../configs"):
+    with initialize(version_base="1.3", config_path="../src/configs"):
         cfg = compose(
             config_name="train.yaml",
             return_hydra_config=True,

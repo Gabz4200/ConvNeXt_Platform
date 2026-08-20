@@ -1,0 +1,15 @@
+include README.md
+include LICENSE
+include environment.yaml
+include .project-root
+
+recursive-include src/configs *.yaml
+recursive-include src/configs *.yml
+
+recursive-include src *.py
+recursive-include tests *.py
+
+global-exclude __pycache__
+global-exclude *.pyc
+global-exclude .DS_Store
+global-exclude *.so

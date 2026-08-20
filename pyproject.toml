@@ -2,9 +2,9 @@
 # For conda environments, see environment.yaml.
 
 [project]
-name = "src"
+name = "convnext-platform"
 version = "0.0.1"
-description = "ConvNeXt Platform"
+description = "ConvNeXt Platform: gamepad control vision-temporal model with DINOv3 and RWKV-7"
 requires-python = ">=3.10"
 dependencies = [
     "torch>=2.0.0",
@@ -40,6 +40,7 @@ dev = [
 [project.scripts]
 train_command = "src.train:main"
 eval_command = "src.eval:main"
+train_nitrogen = "src.train_nitrogen:main"
 
 [build-system]
 requires = ["setuptools>=61.0"]

@@ -241,7 +241,7 @@ def train(
     }
 
 
-@hydra.main(version_base="1.3", config_path="../configs", config_name="train.yaml")
+@hydra.main(version_base="1.3", config_path="configs", config_name="train.yaml")
 def main(cfg: DictConfig) -> float | None:
     """Hydra CLI entry point."""
     metric_dict, _ = run_train_task(cfg, task_name="NitroGen training")
