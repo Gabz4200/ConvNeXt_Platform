@@ -8,6 +8,21 @@ import torch.nn.functional as F
 from torch import nn
 
 
+def _smallest_prime_factor(n: int) -> int:
+    """Return the minimal divisor greater than 1 of ``n``.
+
+    Returns ``n`` itself when ``n`` is prime or less than 2.
+    """
+    if n <= 1:
+        return 1
+    if n % 2 == 0:
+        return 2
+    for i in range(3, math.isqrt(n) + 1, 2):
+        if n % i == 0:
+            return i
+    return n
+
+
 class LearnedWeightedGAP(nn.Module):
     """Learned Weighted Global Average Pooling (GAP) layer for 2D spatial feature maps.
 
@@ -114,6 +129,7 @@ class AdaptiveLearnedPool2d(nn.Module):
     """
 
     max_pad_ratio: float = 3.0
+    _smallest_prime_factor = staticmethod(_smallest_prime_factor)
 
     def __init__(
         self,
@@ -188,18 +204,6 @@ class AdaptiveLearnedPool2d(nn.Module):
                 groups=1,
             ),
         )
-
-    def _smallest_prime_factor(self, n: int) -> int:
-        """Returns the minimal divisor > 1 (smallest prime factor) of n."""
-        if n <= 1:
-            return 1
-        if n % 2 == 0:
-            return 2
-        # Check odd numbers up to the square root of n
-        for i in range(3, math.isqrt(n) + 1, 2):
-            if n % i == 0:
-                return i
-        return n
 
     def _get_downsample_params(
         self,
@@ -346,6 +350,8 @@ class AdaptiveLearnedUnpool2d(nn.Module):
     input size.
     """
 
+    _smallest_prime_factor = staticmethod(_smallest_prime_factor)
+
     def __init__(
         self,
         in_features: int,
@@ -420,18 +426,6 @@ class AdaptiveLearnedUnpool2d(nn.Module):
                 groups=1,
             ),
         )
-
-    def _smallest_prime_factor(self, n: int) -> int:
-        """Returns the minimal divisor > 1 (smallest prime factor) of n."""
-        if n <= 1:
-            return 1
-        if n % 2 == 0:
-            return 2
-        # Check odd numbers up to the square root of n
-        for i in range(3, math.isqrt(n) + 1, 2):
-            if n % i == 0:
-                return i
-        return n
 
     def _get_upsample_params(
         self,

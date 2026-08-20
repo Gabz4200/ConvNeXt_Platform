@@ -178,7 +178,7 @@ def test_adaptive_learned_pool_gradient_flow() -> None:
         ((2, 3, 7, 9), (1, 5), (2, 3, 7, 10)),
     ],
 )
-def test_pad_to_nearrest_multiple(
+def test_pad_to_nearest_multiple(
     size: tuple[int, int, int, int],
     multiple: tuple[int, int],
     expected: tuple[int, int, int, int],
