@@ -1,7 +1,11 @@
 import pytest
 import torch
 
-from src.models.components.poolers import AdaptiveLearnedPool2d, LearnedWeightedGAP
+from src.models.components.poolers import (
+    AdaptiveLearnedPool2d,
+    AdaptiveLearnedUnpool2d,
+    LearnedWeightedGAP,
+)
 
 
 @pytest.mark.parametrize("num_output", [1, 2, 4])
@@ -287,3 +291,131 @@ def test_adaptive_learned_pool_downsample_params() -> None:
 
     assert _make_adaptive_pooler(output_size=(7, 7)).kernel_size == (7, 7)
     assert _make_adaptive_pooler(output_size=(1, 8)).kernel_size == (1, 2)
+
+
+def _make_adaptive_unpooler(
+    in_features: int = 32,
+    intermediate_features: int = 16,
+    out_features: int = 8,
+    output_size: tuple[int, int] = (16, 16),
+) -> AdaptiveLearnedUnpool2d:
+    return AdaptiveLearnedUnpool2d(
+        in_features=in_features,
+        intermediate_features=intermediate_features,
+        out_features=out_features,
+        output_size=output_size,
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_size", "output_size"),
+    [
+        ((4, 4), (16, 16)),
+        ((3, 3), (8, 8)),
+        ((5, 5), (16, 16)),
+        ((1, 1), (8, 9)),
+        ((8, 8), (32, 48)),
+        ((3, 4), (8, 9)),
+        ((4, 4), (8, 12)),
+        ((16, 16), (4, 4)),
+    ],
+)
+def test_adaptive_learned_unpool_output_shape(
+    input_size: tuple[int, int], output_size: tuple[int, int]
+) -> None:
+    batch_size = 2
+    in_features = 32
+    out_features = 8
+
+    pooler = _make_adaptive_unpooler(
+        in_features=in_features,
+        intermediate_features=16,
+        out_features=out_features,
+        output_size=output_size,
+    )
+    x = torch.randn(batch_size, in_features, *input_size)
+    out = pooler(x)
+
+    assert out.shape == (batch_size, out_features, *output_size)
+
+
+@pytest.mark.parametrize(
+    ("in_features", "intermediate_features"),
+    [(8, 64), (32, 32), (64, 8), (16, 48)],
+)
+def test_adaptive_learned_unpool_arbitrary_channels(
+    in_features: int, intermediate_features: int
+) -> None:
+    pooler = _make_adaptive_unpooler(
+        in_features=in_features,
+        intermediate_features=intermediate_features,
+        output_size=(16, 16),
+    )
+    x = torch.randn(2, in_features, 4, 4)
+    out = pooler(x)
+
+    assert out.shape == (2, 8, 16, 16)
+
+
+@pytest.mark.parametrize("height", [1, 2, 3, 4, 5, 7, 8, 9])
+@pytest.mark.parametrize("target", [1, 4, 8, 16])
+def test_adaptive_learned_unpool_exact_target_size(height: int, target: int) -> None:
+    pooler = _make_adaptive_unpooler(
+        in_features=8,
+        intermediate_features=8,
+        out_features=4,
+        output_size=(target, target),
+    )
+    x = torch.randn(1, 8, height, height)
+    out = pooler(x)
+
+    assert out.shape[-2:] == (target, target)
+
+
+def test_adaptive_learned_unpool_gradient_flow() -> None:
+    pooler = _make_adaptive_unpooler(
+        in_features=16, intermediate_features=16, output_size=(8, 8)
+    )
+    x = torch.randn(2, 16, 4, 4, requires_grad=True)
+
+    out = pooler(x)
+    out.sum().backward()
+
+    assert x.grad is not None
+    assert x.grad.shape == x.shape
+    assert all(param.grad is not None for param in pooler.parameters())
+
+
+@pytest.mark.parametrize(
+    ("size", "target", "factor", "expected"),
+    [
+        (1, 8, 2, 3),
+        (3, 8, 2, 2),
+        (8, 8, 2, 0),
+        (9, 8, 2, 0),
+        (1, 7, 7, 1),
+        (4, 7, 7, 1),
+        (7, 7, 7, 0),
+        (1, 9, 3, 2),
+        (4, 8, 1, 0),
+    ],
+)
+def test_num_upsamples(size: int, target: int, factor: int, expected: int) -> None:
+    assert _make_adaptive_unpooler()._num_upsamples(size, target, factor) == expected
+
+
+def test_adaptive_learned_unpool_upsample_params() -> None:
+    pooler = _make_adaptive_unpooler(output_size=(8, 9))
+    assert pooler.kernel_size == (2, 3)
+    assert pooler.stride == (2, 3)
+
+    assert _make_adaptive_unpooler(output_size=(7, 7)).kernel_size == (7, 7)
+    assert _make_adaptive_unpooler(output_size=(1, 8)).kernel_size == (1, 2)
+
+
+@pytest.mark.parametrize("output_size", [(0, 4), (4, 0), (0, 0)])
+def test_adaptive_learned_unpool_invalid_output_size(
+    output_size: tuple[int, int],
+) -> None:
+    with pytest.raises(ValueError, match="output_size dimensions must be positive"):
+        _make_adaptive_unpooler(output_size=output_size)

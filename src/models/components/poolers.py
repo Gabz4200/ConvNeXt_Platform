@@ -334,3 +334,173 @@ class AdaptiveLearnedPool2d(nn.Module):
         pooled = torch.cat([input_avg, downsampled], dim=1)
 
         return self.output_conv(pooled)
+
+
+class AdaptiveLearnedUnpool2d(nn.Module):
+    """Learned adaptive upsampling of 2D feature maps to a fixed spatial ``output_size``.
+
+    The transposed-convolution mirror of ``AdaptiveLearnedPool2d``: applies mobilenet-style
+    depthwise-separable convolutions, upsamples with the strided ``upsampling_core`` until the
+    target size is reached, and mixes the result with the interpolated input before a final
+    convolution. The output spatial dimensions always equal ``output_size`` regardless of
+    input size.
+    """
+
+    def __init__(
+        self,
+        in_features: int,
+        intermediate_features: int,
+        out_features: int,
+        output_size: tuple[int, int],
+    ) -> None:
+        super().__init__()
+        if output_size[0] < 1 or output_size[1] < 1:
+            raise ValueError(
+                f"output_size dimensions must be positive, got {output_size}."
+            )
+        self.in_features = in_features
+        self.intermediate_features = intermediate_features
+        self.out_features = out_features
+        self.output_size = output_size
+
+        # Upsampling factor per core application (smallest prime factor of each target dim).
+        self.kernel_size, self.stride = self._get_upsample_params(output_size)
+
+        # Mobilenet style convs for efficient execution.
+        self.input_conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels=in_features,
+                out_channels=in_features,
+                kernel_size=3,
+                padding="same",
+                groups=in_features,
+            ),
+            nn.Conv2d(
+                in_channels=in_features,
+                out_channels=intermediate_features,
+                kernel_size=1,
+                padding="same",
+                groups=1,
+            ),
+            nn.GELU(approximate="tanh"),
+        )
+
+        self.upsampling_core = nn.Sequential(
+            nn.ConvTranspose2d(
+                in_channels=intermediate_features,
+                out_channels=intermediate_features,
+                kernel_size=self.kernel_size,
+                stride=self.stride,
+                padding=0,
+                output_padding=0,
+                groups=intermediate_features,
+            ),
+            nn.Conv2d(
+                in_channels=intermediate_features,
+                out_channels=intermediate_features,
+                kernel_size=1,
+                padding="same",
+                groups=1,
+            ),
+            nn.GELU(approximate="tanh"),
+        )
+
+        self.output_conv = nn.Sequential(
+            nn.Conv2d(
+                in_channels=intermediate_features + in_features,
+                out_channels=intermediate_features,
+                kernel_size=3,
+                padding="same",
+            ),
+            nn.Conv2d(
+                in_channels=intermediate_features,
+                out_channels=out_features,
+                kernel_size=1,
+                padding="same",
+                groups=1,
+            ),
+        )
+
+    def _smallest_prime_factor(self, n: int) -> int:
+        """Returns the minimal divisor > 1 (smallest prime factor) of n."""
+        if n <= 1:
+            return 1
+        if n % 2 == 0:
+            return 2
+        # Check odd numbers up to the square root of n
+        for i in range(3, math.isqrt(n) + 1, 2):
+            if n % i == 0:
+                return i
+        return n
+
+    def _get_upsample_params(
+        self,
+        output_size: tuple[int, int],
+    ) -> tuple[tuple[int, int], tuple[int, int]]:
+        """Parse ``output_size`` and return the appropriate kernel_size and stride.
+
+        Uses the smallest prime factor of each target dimension so that repeated
+        transposed convolutions can increase the spatial size up to it exactly.
+
+        :param output_size: `(output_h, output_w)` target spatial size.
+        :return: `(kernel_size, stride)` tuples `(k_h, k_w)` for both.
+        """
+        k_h = self._smallest_prime_factor(output_size[0])
+        k_w = self._smallest_prime_factor(output_size[1])
+
+        return (k_h, k_w), (k_h, k_w)
+
+    def _num_upsamples(self, size: int, target: int, factor: int) -> int:
+        """Return how many transposed-conv upsampling applications are needed to reach ``target``.
+
+        :param size: Current spatial dimension.
+        :param target: Target spatial dimension.
+        :param factor: Upsampling factor for the dimension.
+        :return: Number of ``upsampling_core`` applications required.
+        """
+        if factor <= 1:
+            return 0
+
+        num = 0
+        while size * factor**num < target:
+            num += 1
+        return num
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Upsample the input to ``output_size`` and mix it with interpolated input features.
+
+        The ``upsampling_core`` is applied until ``input_size * factor**N`` reaches at least
+        ``output_size``; a final interpolate guarantees the exact target size before the
+        interpolated input features are fused.
+
+        :param x: Input feature tensor of shape `(B, C, H, W)`.
+        :return: Upsampled tensor of shape `(B, out_features, output_h, output_w)`.
+        """
+        target_h, target_w = self.output_size
+        k_h, k_w = self.kernel_size
+
+        # Number of transposed-conv upsampling applications (shared by both dimensions).
+        num_upsamples = max(
+            self._num_upsamples(x.shape[-2], target_h, k_h),
+            self._num_upsamples(x.shape[-1], target_w, k_w),
+        )
+
+        input_features = self.input_conv(x)
+        input_up = F.interpolate(
+            x, size=self.output_size, mode="bilinear", align_corners=False
+        )
+
+        # For loop N times the upsample_core until the target size is reached.
+        upsampled = input_features
+        for _ in range(num_upsamples):
+            upsampled = self.upsampling_core(upsampled)
+
+        # Guarantee exact target spatial size before concatenation.
+        upsampled = F.interpolate(
+            upsampled, size=self.output_size, mode="bilinear", align_corners=False
+        )
+
+        # Concatenate the input_up with the upsampled features along the channel dim.
+        out = torch.cat([input_up, upsampled], dim=1)
+
+        return self.output_conv(out)
