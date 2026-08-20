@@ -5,7 +5,7 @@ from src.data.components.nitrogen_dataset import (
     BUTTON_COLUMNS,
     JOYSTICK_COLUMNS,
     NitroGenDataset,
-    generate_synthetic_game_frame,
+    load_frame,
     parse_parquet_gamepad_actions,
 )
 
@@ -14,6 +14,6 @@ __all__ = [
     "CIFAR10HFDataset",
     "JOYSTICK_COLUMNS",
     "NitroGenDataset",
-    "generate_synthetic_game_frame",
+    "load_frame",
     "parse_parquet_gamepad_actions",
 ]

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from lightning import LightningDataModule
 from torch import Tensor
 from torch.utils.data import DataLoader
@@ -30,6 +32,8 @@ class NitroGenDataModule(LightningDataModule):
     :param steps_per_sample: Number of temporal steps per chunk window. Default: 16.
     :param single_step: If True, each forward pass produces 1 Gamepad State, unrolling 16 steps
         into 16 samples. Default: True.
+    :param video_dir: Base directory with real gameplay video frames. When configured, frames
+        must exist on disk or FileNotFoundError is raised immediately (fail-fast). Default: None.
     :param shuffle: Whether to shuffle shards and maintain a streaming shuffle buffer. Default: True.
     :param shuffle_buffer_size: Size of streaming reservoir shuffle buffer. Default: 1000.
     :param shards: Optional list of integer shard indices to stream. Default: None.
@@ -45,6 +49,7 @@ class NitroGenDataModule(LightningDataModule):
     def __init__(
         self,
         repo_id: str = "nvidia/NitroGen",
+        video_dir: str | Path | None = None,
         batch_size: int = 32,
         max_samples: int | None = None,
         val_samples: int = 100,
@@ -90,6 +95,7 @@ class NitroGenDataModule(LightningDataModule):
             self.data_train = NitroGenDataset(
                 repo_id=self.hparams.repo_id,
                 split="train",
+                video_dir=self.hparams.video_dir,
                 shards=self.hparams.shards,
                 max_shards=self.hparams.max_shards,
                 max_chunks_per_shard=self.hparams.max_chunks_per_shard,
@@ -105,6 +111,7 @@ class NitroGenDataModule(LightningDataModule):
             self.data_val = NitroGenDataset(
                 repo_id=self.hparams.repo_id,
                 split="val",
+                video_dir=self.hparams.video_dir,
                 shards=self.hparams.shards,
                 max_shards=self.hparams.max_shards,
                 max_chunks_per_shard=self.hparams.max_chunks_per_shard,
@@ -122,6 +129,7 @@ class NitroGenDataModule(LightningDataModule):
             self.data_test = NitroGenDataset(
                 repo_id=self.hparams.repo_id,
                 split="test",
+                video_dir=self.hparams.video_dir,
                 shards=self.hparams.shards,
                 max_shards=self.hparams.max_shards,
                 max_chunks_per_shard=self.hparams.max_chunks_per_shard,

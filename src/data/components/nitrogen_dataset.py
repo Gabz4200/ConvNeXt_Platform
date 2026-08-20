@@ -10,15 +10,17 @@ from __future__ import annotations
 import io
 import json
 import logging
-import math
 import random
 import tarfile
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any, cast
 
 import numpy as np
 import pyarrow.parquet as pq
 import torch
+import torchvision.transforms.functional as TF
+from PIL import Image
 from torch import Tensor
 from torch.utils.data import IterableDataset, get_worker_info
 
@@ -66,69 +68,63 @@ def parse_parquet_gamepad_actions(parquet_bytes: bytes) -> Tensor:
     return torch.cat([btns, joys], dim=-1)
 
 
-def generate_synthetic_game_frame(
+def load_frame(
     frame_idx: int,
-    total_frames: int,
     meta: dict[str, Any] | None,
+    video_dir: str | Path,
     image_size: tuple[int, int] = (224, 224),
-    seed: int = 42,
-) -> Tensor:
-    """Generate a structured synthetic game frame when raw video is not downloaded locally.
+) -> Tensor | None:
+    """Attempt to load and resize a real video frame from disk, returning None if missing.
 
-    Produces float32 tensor of shape `(3, H, W)` with gameplay visual textures,
-    game area bounds, and controller overlay positions derived from chunk metadata.
-    Output is in raw [0, 1] range; normalization is applied by the model's
-    `_InputNormalize` layer to match DINOv3's DINOv3ViTImageProcessorFast.
-
-    **Note:** The phase offset uses `(seed % 100)`, so visual patterns repeat every 100 frames.
-    This is intended only for local testing; replace with real decoded video frames or a learned
-    visual encoder for production training.
-
-    :param frame_idx: Frame index within the chunk (0 to total_frames - 1).
-    :param total_frames: Total number of frames in the chunk.
-    :param meta: Parsed metadata dict from metadata.json, if available.
+    :param frame_idx: Frame index within the chunk.
+    :param meta: Metadata dictionary from metadata.json.
+    :param video_dir: Base directory containing gameplay video files or extracted frames.
     :param image_size: Target `(height, width)` tuple. Default: (224, 224).
-    :param seed: Random seed for visual feature consistency. Default: 42.
-    :return: Raw image tensor of shape `(3, H, W)` in [0, 1] range.
+    :return: Image tensor in [0, 1] range if found, or None if missing.
     """
-    height, width = image_size
-    t_ratio = frame_idx / max(total_frames, 1)
+    if meta is None:
+        return None
 
-    y_coords = torch.linspace(0.0, 1.0, height).unsqueeze(1).expand(height, width)
-    x_coords = torch.linspace(0.0, 1.0, width).unsqueeze(0).expand(height, width)
+    base_dir = Path(video_dir)
+    orig_video = meta.get("original_video", {})
+    video_id = orig_video.get("video_id", "")
+    uuid = meta.get("uuid", "")
+    chunk_id = meta.get("chunk_id", "")
+    start_frame = orig_video.get("start_frame", 0)
+    abs_frame_idx = start_frame + frame_idx
 
-    phase = 2.0 * math.pi * (t_ratio + (seed % 100) / 100.0)
-    channel_r = 0.5 + 0.3 * torch.sin(x_coords * 4.0 + phase)
-    channel_g = 0.5 + 0.3 * torch.cos(y_coords * 4.0 - phase)
-    channel_b = 0.5 + 0.3 * torch.sin((x_coords + y_coords) * 3.0 + phase * 0.5)
+    candidate_paths = [
+        base_dir / video_id / f"frame_{abs_frame_idx:06d}.jpg",
+        base_dir / video_id / f"frame_{abs_frame_idx:06d}.png",
+        base_dir / video_id / f"{abs_frame_idx:06d}.jpg",
+        base_dir / video_id / f"{abs_frame_idx:06d}.png",
+        base_dir / uuid / f"frame_{frame_idx:06d}.jpg",
+        base_dir / uuid / f"frame_{frame_idx:06d}.png",
+        base_dir / f"{video_id}_chunk_{chunk_id}" / f"frame_{frame_idx:06d}.jpg",
+        base_dir / f"{video_id}_chunk_{chunk_id}" / f"frame_{frame_idx:06d}.png",
+    ]
 
-    if meta is not None and "bbox_game_area" in meta:
-        bbox = meta["bbox_game_area"]
-        x_min = int(bbox.get("xtl", 0.0) * width)
-        y_min = int(bbox.get("ytl", 0.0) * height)
-        x_max = int(bbox.get("xbr", 1.0) * width)
-        y_max = int(bbox.get("ybr", 1.0) * height)
-        mask = torch.zeros(height, width, dtype=torch.float32)
-        mask[max(0, y_min) : min(height, y_max), max(0, x_min) : min(width, x_max)] = 1.0
-        channel_r = channel_r * mask + 0.1 * (1.0 - mask)
-        channel_g = channel_g * mask + 0.1 * (1.0 - mask)
-        channel_b = channel_b * mask + 0.1 * (1.0 - mask)
+    for path in candidate_paths:
+        if path.is_file():
+            img = Image.open(path).convert("RGB")
+            tensor = TF.to_tensor(img)
+            return TF.resize(tensor, list(image_size))
 
-    frame = torch.stack([channel_r, channel_g, channel_b], dim=0)
-
-    return frame.clamp(0.0, 1.0)
+    return None
 
 
 class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
     """Streaming IterableDataset for the NitroGen dataset on HuggingFace Hub.
 
     Streams action annotations from tar.gz shards in `nvidia/NitroGen`, extracting 21-D gamepad
-    targets (17 binary buttons and 4 joystick axes in [-1, 1]) paired with visual frame tensors.
+    targets (17 binary buttons and 4 joystick axes in [-1, 1]) paired with real visual video frames.
 
     When `single_step=True`, each 16-step sequence window is unrolled so each forward pass
     processes 1 frame `(3, H, W)` and produces 1 Gamepad State `(21,)`, making each 16-step
     sample yield 16 individual step samples.
 
+    :param video_dir: Base directory with real gameplay video frames. Chunks whose frames are not
+        found in `video_dir` are skipped with informational logging.
     :param repo_id: HuggingFace Hub repository ID. Default: 'nvidia/NitroGen'.
     :param split: Dataset split: 'train', 'val', or 'test'. Default: 'train'.
     :param shards: Optional list of integer shard indices to stream (0 to 99).
@@ -147,6 +143,7 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
 
     def __init__(
         self,
+        video_dir: str | Path,
         repo_id: str = "nvidia/NitroGen",
         split: str = "train",
         shards: list[int] | None = None,
@@ -162,6 +159,11 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
         seed: int = 42,
     ) -> None:
         super().__init__()
+        if not video_dir:
+            raise ValueError(
+                "video_dir must be specified to load real gameplay video frames for NitroGenDataset."
+            )
+        self.video_dir = Path(video_dir)
         self.repo_id = repo_id
         self.split = split
         self.max_shards = max_shards
@@ -268,28 +270,8 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
         ) as tar:
             yield from self._extract_tar_members(tar)
 
-    def _unroll_window_samples(
-        self,
-        start_t: int,
-        target_window: Tensor,
-        total_frames: int,
-        meta: dict[str, Any] | None,
-    ) -> Iterator[tuple[Tensor, Tensor]]:
-        """Yield unrolled single-step samples for one window."""
-        for step_i in range(self.steps_per_sample):
-            frame_idx = start_t + step_i
-            img_t = generate_synthetic_game_frame(
-                frame_idx=frame_idx,
-                total_frames=total_frames,
-                meta=meta,
-                image_size=self.image_size,
-                seed=self.seed + frame_idx,
-            )
-            action_t = target_window[step_i]
-            yield img_t, action_t
-
-    def _raw_samples(self) -> Iterator[tuple[Tensor, Tensor]]:
-        """Extract raw unbuffered samples across all worker shards."""
+    def _raw_windows(self) -> Iterator[list[tuple[Tensor, Tensor]] | tuple[Tensor, Tensor]]:
+        """Extract sequence windows across all worker shards, preserving chronological order within each window."""
         worker_shards = self._get_worker_shards()
         chunk_idx = 0
 
@@ -309,62 +291,111 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
                     end_t = start_t + self.steps_per_sample
                     target_window = actions[start_t:end_t]
 
-                    if self.single_step:
-                        yield from self._unroll_window_samples(
-                            start_t, target_window, total_frames, meta
+                    window_frames: list[Tensor] = []
+                    missing = False
+                    orig_vid = meta.get("original_video", {}) if meta else {}
+                    vid_id = orig_vid.get("video_id", "unknown")
+                    cid = meta.get("chunk_id", "unknown") if meta else "unknown"
+
+                    for step_i in range(self.steps_per_sample):
+                        f = load_frame(
+                            frame_idx=start_t + step_i,
+                            meta=meta,
+                            video_dir=self.video_dir,
+                            image_size=self.image_size,
                         )
-                    else:
-                        frames = torch.stack([
-                            generate_synthetic_game_frame(
-                                frame_idx=start_t + step_i,
-                                total_frames=total_frames,
-                                meta=meta,
-                                image_size=self.image_size,
-                                seed=self.seed + start_t + step_i,
-                            )
+                        if f is None:
+                            missing = True
+                            break
+                        window_frames.append(f)
+
+                    if missing:
+                        logger.info(
+                            f"Skipping video '{vid_id}' chunk '{cid}' window [{start_t}..{end_t}]: "
+                            f"frames not found in video_dir '{self.video_dir}'"
+                        )
+                        continue
+
+                    logger.info(
+                        f"Loaded video '{vid_id}' chunk '{cid}' window [{start_t}..{end_t}] "
+                        f"({len(window_frames)} frames) from '{self.video_dir}'"
+                    )
+
+                    if self.single_step:
+                        episode = [
+                            (window_frames[step_i], target_window[step_i])
                             for step_i in range(self.steps_per_sample)
-                        ], dim=0)
-                        yield frames, target_window
+                        ]
+                        yield episode
+                    else:
+                        yield (torch.stack(window_frames, dim=0), target_window)
 
     def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:
-        """Iterate over dataset samples with streaming shuffle buffer support."""
+        """Iterate over dataset samples with episode-level streaming shuffle buffer.
+
+        Preserves strict chronological frame sequence within each gameplay episode/window
+        so that RWKV-7 and CausalConv1d execute continuous temporal mixing.
+        """
         samples_yielded = 0
-        raw_iterator = self._raw_samples()
+        raw_windows = self._raw_windows()
 
         if not self.shuffle or self.shuffle_buffer_size <= 1:
-            for sample in raw_iterator:
-                yield sample
-                samples_yielded += 1
-                if self.max_samples is not None and samples_yielded >= self.max_samples:
-                    return
+            for window in raw_windows:
+                if isinstance(window, list):
+                    for sample in window:
+                        yield sample
+                        samples_yielded += 1
+                        if self.max_samples is not None and samples_yielded >= self.max_samples:
+                            return
+                else:
+                    yield window
+                    samples_yielded += 1
+                    if self.max_samples is not None and samples_yielded >= self.max_samples:
+                        return
             return
 
         rng = random.Random(self.seed)
-        buffer: list[tuple[Tensor, Tensor]] = []
+        buffer: list[list[tuple[Tensor, Tensor]] | tuple[Tensor, Tensor]] = []
 
-        for sample in raw_iterator:
+        for window in raw_windows:
             if len(buffer) < self.shuffle_buffer_size:
-                buffer.append(sample)
+                buffer.append(window)
             else:
                 idx = rng.randint(0, len(buffer) - 1)
-                yield buffer[idx]
-                buffer[idx] = sample
+                selected_window = buffer[idx]
+                buffer[idx] = window
+
+                if isinstance(selected_window, list):
+                    for sample in selected_window:
+                        yield sample
+                        samples_yielded += 1
+                        if self.max_samples is not None and samples_yielded >= self.max_samples:
+                            return
+                else:
+                    yield selected_window
+                    samples_yielded += 1
+                    if self.max_samples is not None and samples_yielded >= self.max_samples:
+                        return
+
+        rng.shuffle(buffer)
+        for window in buffer:
+            if isinstance(window, list):
+                for sample in window:
+                    yield sample
+                    samples_yielded += 1
+                    if self.max_samples is not None and samples_yielded >= self.max_samples:
+                        return
+            else:
+                yield window
                 samples_yielded += 1
                 if self.max_samples is not None and samples_yielded >= self.max_samples:
                     return
-
-        rng.shuffle(buffer)
-        for sample in buffer:
-            yield sample
-            samples_yielded += 1
-            if self.max_samples is not None and samples_yielded >= self.max_samples:
-                return
 
 
 __all__ = [
     "BUTTON_COLUMNS",
     "JOYSTICK_COLUMNS",
     "NitroGenDataset",
-    "generate_synthetic_game_frame",
+    "load_frame",
     "parse_parquet_gamepad_actions",
 ]

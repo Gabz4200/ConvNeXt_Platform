@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 from functools import partial
+from pathlib import Path
 from typing import Any
 
 import lightning as L
@@ -31,6 +32,7 @@ log = RankedLogger(__name__, rank_zero_only=True)
 def train(
     # Data hyperparameters
     repo_id: str = "nvidia/NitroGen",
+    video_dir: str | Path | None = None,
     batch_size: int = 32,
     max_samples: int | None = None,
     val_samples: int = 100,
@@ -150,6 +152,7 @@ def train(
     # 1. Instantiate DataModule
     datamodule = NitroGenDataModule(
         repo_id=repo_id,
+        video_dir=video_dir,
         batch_size=batch_size,
         max_samples=max_samples,
         val_samples=val_samples,

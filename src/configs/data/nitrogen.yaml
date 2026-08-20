@@ -1,5 +1,6 @@
 _target_: src.data.nitrogen_datamodule.NitroGenDataModule
 repo_id: nvidia/NitroGen
+video_dir: null
 batch_size: 32
 max_samples: null
 val_samples: 100
