@@ -1,0 +1,41 @@
+_target_: src.models.convnext_rwkv7_module.ConvNeXtRWKV7GamepadLitModule
+
+optimizer:
+  _target_: torch.optim.AdamW
+  _partial_: true
+  lr: 1.0e-3
+  weight_decay: 0.01
+
+scheduler:
+  _target_: torch.optim.lr_scheduler.CosineAnnealingLR
+  _partial_: true
+  T_max: ${trainer.max_epochs}
+
+joystick_loss_weight: 1.0
+convnext_lr: null
+
+net:
+  _target_: src.models.components.convnext_rwkv7.ConvNeXtRWKV7Gamepad
+  in_chans: 3
+  pool_intermediate_features: 32
+  convnext_size: "tiny"
+  convnext_dims: [96, 192, 384, 768]
+  convnext_depths: [3, 3, 9, 3]
+  convnext_drop_path_rate: 0.0
+  convnext_layer_scale_init_value: 1.0e-6
+  pretrained_dinov3: true
+  dinov3_repo_id: "facebook/dinov3-convnext-tiny-pretrain-lvd1689m"
+  bypass_stem: false
+  freeze_convnext: true
+  gap_kernel_size: 3
+  gap_concat: true
+  causal_conv_kernel_size: 3
+  rwkv_dim: 256
+  rwkv_head_size: 64
+  rwkv_layers: 4
+  rwkv_dim_ffn: null
+  head_hidden_dim: 256
+  num_buttons: 17
+  num_joysticks: 2
+
+compile: false

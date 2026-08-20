@@ -76,3 +76,32 @@ def test_convnext_feature_extraction_predict() -> None:
     assert outputs is not None
     features = torch.cat(cast(list[torch.Tensor], outputs))
     assert features.shape == (2, 768)
+
+
+def test_convnext_rwkv7_gamepad_predict() -> None:
+    """Gamepad model config instantiates via Hydra and runs prediction through Lightning predict."""
+    with initialize(version_base="1.3", config_path="../configs"):
+        cfg = compose(
+            config_name="train.yaml",
+            return_hydra_config=True,
+            overrides=[
+                "model=convnext_rwkv7_gamepad",
+                "model.net.pretrained_dinov3=false",
+            ],
+        )
+
+    HydraConfig().set_config(cfg)
+
+    model = hydra.utils.instantiate(cfg.model)
+    trainer = Trainer(
+        accelerator="cpu",
+        devices=1,
+        logger=False,
+        enable_checkpointing=False,
+        enable_progress_bar=False,
+    )
+    dataloader = DataLoader(torch.utils.data.TensorDataset(torch.randn(2, 3, 32, 32)))
+    outputs = trainer.predict(model, dataloaders=dataloader)
+    assert outputs is not None
+    preds = torch.cat(cast(list[torch.Tensor], outputs))
+    assert preds.shape == (2, 21)

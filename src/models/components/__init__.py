@@ -9,6 +9,11 @@ from src.models.components.convnext import (
     convert_dinov3_state_dict,
     load_dinov3_weights,
 )
+from src.models.components.convnext_rwkv7 import (
+    ConvNeXtRWKV7Gamepad,
+    GamepadHead,
+    GamepadStreamingState,
+)
 from src.models.components.poolers import (
     AdaptiveLearnedPool2d,
     AdaptiveLearnedUnpool2d,
@@ -28,7 +33,10 @@ __all__ = [
     "CausalAdaptiveLearnedPool1d",
     "CausalConv1d",
     "ConvNeXt",
+    "ConvNeXtRWKV7Gamepad",
     "DropPath",
+    "GamepadHead",
+    "GamepadStreamingState",
     "LayerNorm",
     "LearnedWeightedGAP",
     "RWKV7Block",

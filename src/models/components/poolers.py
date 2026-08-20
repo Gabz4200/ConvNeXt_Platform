@@ -64,7 +64,7 @@ class LearnedWeightedGAP(nn.Module):
     Args:
         in_features (int): Number of channels in the input tensor :math:`C_{\text{in}}`.
         kernel_size (int, optional): Kernel size of the 2D spatial weighter convolution.
-            Must be an odd integer. Default: 1
+            Must be a positive integer. Default: 1
         num_output (int, optional): Number of spatial attention maps to generate. Default: 1
         concat_gap (bool, optional): If ``True``, concatenates uniform GAP features to the output.
             Default: ``True``
@@ -102,15 +102,13 @@ class LearnedWeightedGAP(nn.Module):
         concat_gap: bool = True,
     ) -> None:
         super().__init__()
-        if kernel_size % 2 == 0:
-            raise ValueError(f"kernel_size must be an odd integer, got {kernel_size}.")
+        if kernel_size < 1:
+            raise ValueError(f"kernel_size must be a positive integer, got {kernel_size}.")
 
         self.in_features = in_features
         self.num_output = num_output
         self.kernel_size = kernel_size
         self.concat_gap = concat_gap
-
-        padding = kernel_size // 2
 
         if kernel_size == 1:
             self.weighter_conv = nn.Conv2d(
@@ -124,7 +122,7 @@ class LearnedWeightedGAP(nn.Module):
                     in_channels=in_features,
                     out_channels=in_features,
                     kernel_size=kernel_size,
-                    padding=padding,
+                    padding="same",
                     groups=in_features,
                 ),
                 nn.Conv2d(

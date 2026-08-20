@@ -33,9 +33,7 @@ class TestRWKV7Block:
         assert new_state.att_state.shape == (2, 4, 16, 16)
         assert new_state.ffn_x_prev.shape == (2, 64)
 
-    def test_recurrent_consistency(
-        self, device: torch.device, dtype: torch.dtype
-    ) -> None:
+    def test_recurrent_consistency(self, device: torch.device, dtype: torch.dtype) -> None:
         torch.manual_seed(0)
         block = RWKV7Block(dim=64, head_size=16, layer_id=0, total_layers=2).to(
             device=device, dtype=dtype
@@ -101,9 +99,7 @@ class TestRWKV7Block:
         assert out.device == x.device
         assert state.att_x_prev.device == x.device
 
-    def test_v_first_residual_connection(
-        self, device: torch.device, dtype: torch.dtype
-    ) -> None:
+    def test_v_first_residual_connection(self, device: torch.device, dtype: torch.dtype) -> None:
         torch.manual_seed(42)
         block0 = RWKV7Block(dim=64, head_size=16, layer_id=0, total_layers=2).to(
             device=device, dtype=dtype
@@ -138,9 +134,7 @@ class TestRWKV7Model:
         assert logits.shape == (2, 8, 32)
         assert len(state) == 2
 
-    def test_recurrent_model_consistency(
-        self, device: torch.device, dtype: torch.dtype
-    ) -> None:
+    def test_recurrent_model_consistency(self, device: torch.device, dtype: torch.dtype) -> None:
         torch.manual_seed(0)
         model = RWKV7Model(dim=64, head_size=16, n_layer=2, vocab_size=32).to(
             device=device, dtype=dtype
@@ -163,9 +157,7 @@ class TestRWKV7Model:
         diff = (logits_full - logits_recurrent).abs().max().item()
         assert diff < 1e-2, f"Model recurrent consistency failed: max diff {diff}"
 
-    def test_state_reuse_across_calls(
-        self, device: torch.device, dtype: torch.dtype
-    ) -> None:
+    def test_state_reuse_across_calls(self, device: torch.device, dtype: torch.dtype) -> None:
         model = RWKV7Model(dim=64, head_size=16, n_layer=2, vocab_size=32).to(
             device=device, dtype=dtype
         )
@@ -196,18 +188,14 @@ class TestRWKV7Model:
 
     def test_cpu_and_cuda_same_result(self) -> None:
         torch.manual_seed(0)
-        model_cpu = (
-            RWKV7Model(dim=32, head_size=8, n_layer=2, vocab_size=16).cpu().float()
-        )
+        model_cpu = RWKV7Model(dim=32, head_size=8, n_layer=2, vocab_size=16).cpu().float()
         model_cpu.eval()
         tokens = torch.randint(0, 16, (1, 4))
 
         logits_cpu, _ = model_cpu(tokens)
 
         if torch.cuda.is_available():
-            model_cuda = (
-                RWKV7Model(dim=32, head_size=8, n_layer=2, vocab_size=16).cuda().float()
-            )
+            model_cuda = RWKV7Model(dim=32, head_size=8, n_layer=2, vocab_size=16).cuda().float()
             model_cuda.eval()
             model_cuda.load_state_dict(model_cpu.state_dict())
             tokens_cuda = tokens.cuda()

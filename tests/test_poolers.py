@@ -42,7 +42,7 @@ def test_learned_weighted_gap_shapes(num_output: int, concat_gap: bool) -> None:
         assert out.shape == (batch_size, expected_outputs, in_features)
 
 
-@pytest.mark.parametrize("kernel_size", [1, 3])
+@pytest.mark.parametrize("kernel_size", [1, 2, 3])
 def test_learned_weighted_gap_gradient_flow(kernel_size: int) -> None:
     pooler = LearnedWeightedGAP(
         in_features=16, kernel_size=kernel_size, num_output=1, concat_gap=True
@@ -59,6 +59,13 @@ def test_learned_weighted_gap_gradient_flow(kernel_size: int) -> None:
         assert param.grad is not None
 
 
+def test_learned_weighted_gap_even_kernel_size() -> None:
+    pooler = LearnedWeightedGAP(in_features=32, kernel_size=2, num_output=1, concat_gap=True)
+    x = torch.randn(4, 32, 7, 7)
+    out = pooler(x)
+    assert out.shape == (4, 64)
+
+
 def test_learned_weighted_gap_config() -> None:
     pooler = LearnedWeightedGAP(in_features=64, kernel_size=3, num_output=2, concat_gap=False)
     config = pooler.get_config()
@@ -73,8 +80,8 @@ def test_learned_weighted_gap_config() -> None:
 
 
 def test_learned_weighted_gap_invalid_kernel_size() -> None:
-    with pytest.raises(ValueError, match="kernel_size must be an odd integer"):
-        LearnedWeightedGAP(in_features=32, kernel_size=2)
+    with pytest.raises(ValueError, match="kernel_size must be a positive integer"):
+        LearnedWeightedGAP(in_features=32, kernel_size=0)
 
 
 def test_learned_weighted_gap_invalid_input_dim() -> None:

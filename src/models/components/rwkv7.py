@@ -94,18 +94,10 @@ class RWKV7Block(nn.Module):
                 tensor = torch.zeros(shape)
                 with torch.no_grad():
                     if len(shape) == 2:
-                        gain = (
-                            math.sqrt(shape[0] / shape[1])
-                            if shape[0] > shape[1]
-                            else 1.0
-                        )
+                        gain = math.sqrt(shape[0] / shape[1]) if shape[0] > shape[1] else 1.0
                         nn.init.orthogonal_(tensor, gain=gain * scale)
                     elif len(shape) == 3:
-                        gain = (
-                            math.sqrt(shape[1] / shape[2])
-                            if shape[1] > shape[2]
-                            else 1.0
-                        )
+                        gain = math.sqrt(shape[1] / shape[2]) if shape[1] > shape[2] else 1.0
                         for i in range(shape[0]):
                             nn.init.orthogonal_(tensor[i], gain=gain * scale)
                 return tensor
@@ -118,9 +110,7 @@ class RWKV7Block(nn.Module):
             D_AAA_LORA = max(32, int(round((2.5 * (C**0.5)) / 32) * 32))
             self.a1 = nn.Parameter(torch.zeros(C, D_AAA_LORA))
             self.a2 = nn.Parameter(ortho_init((D_AAA_LORA, C), 0.1))
-            self.a0 = nn.Parameter(
-                torch.zeros(1, 1, C) - 0.19 + zigzag * 0.3 + linear * 0.4
-            )
+            self.a0 = nn.Parameter(torch.zeros(1, 1, C) - 0.19 + zigzag * 0.3 + linear * 0.4)
 
             D_MV_LORA = max(32, int(round((1.7 * (C**0.5)) / 32) * 32))
             self.v1 = nn.Parameter(torch.zeros(C, D_MV_LORA))
@@ -509,9 +499,7 @@ class RWKV7Model(nn.Module):
         v_first = None
         for i, block in enumerate(self.blocks):
             rwkv_block = cast(RWKV7Block, block)
-            x, state[i], v_first = rwkv_block._forward_impl(
-                x, state[i], v_first=v_first
-            )
+            x, state[i], v_first = rwkv_block._forward_impl(x, state[i], v_first=v_first)
 
         x = self.ln_out(x)
         logits = self.head(x)
