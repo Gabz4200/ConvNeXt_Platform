@@ -5,6 +5,7 @@ from typing import Any
 import pytest
 import torch
 import torch.nn.functional as F
+from torch import nn
 
 from src.models.components.poolers import (
     AdaptiveLearnedPool2d,
@@ -41,8 +42,11 @@ def test_learned_weighted_gap_shapes(num_output: int, concat_gap: bool) -> None:
         assert out.shape == (batch_size, expected_outputs, in_features)
 
 
-def test_learned_weighted_gap_gradient_flow() -> None:
-    pooler = LearnedWeightedGAP(in_features=16, kernel_size=1, num_output=1, concat_gap=True)
+@pytest.mark.parametrize("kernel_size", [1, 3])
+def test_learned_weighted_gap_gradient_flow(kernel_size: int) -> None:
+    pooler = LearnedWeightedGAP(
+        in_features=16, kernel_size=kernel_size, num_output=1, concat_gap=True
+    )
     x = torch.randn(2, 16, 8, 8, requires_grad=True)
 
     out = pooler(x)
@@ -51,7 +55,8 @@ def test_learned_weighted_gap_gradient_flow() -> None:
 
     assert x.grad is not None
     assert x.grad.shape == x.shape
-    assert pooler.weighter_conv.weight.grad is not None
+    for param in pooler.parameters():
+        assert param.grad is not None
 
 
 def test_learned_weighted_gap_config() -> None:
@@ -822,3 +827,81 @@ def test_causal_adaptive_pool_invalid_temporal_dim() -> None:
     x_3d = torch.randn(2, 8, 10)
     with pytest.raises(IndexError, match="temporal_dim 5 out of bounds"):
         pooler(x_3d)
+
+
+def test_mobilenet_depthwise_separable_structure() -> None:
+    # 1. LearnedWeightedGAP with kernel_size > 1
+    gap = LearnedWeightedGAP(in_features=32, kernel_size=3, num_output=4)
+    assert isinstance(gap.weighter_conv, nn.Sequential)
+    dw_conv, pw_conv = gap.weighter_conv[0], gap.weighter_conv[1]
+    assert isinstance(dw_conv, nn.Conv2d)
+    assert isinstance(pw_conv, nn.Conv2d)
+    assert dw_conv.groups == 32
+    assert dw_conv.kernel_size == (3, 3)
+    assert pw_conv.kernel_size == (1, 1)
+
+    # 2. AdaptiveLearnedPool2d
+    pool2d = AdaptiveLearnedPool2d(
+        in_features=16, intermediate_features=32, out_features=64, output_size=(7, 7)
+    )
+    # input_conv: depthwise + pointwise
+    assert pool2d.input_conv[0].groups == 16
+    assert pool2d.input_conv[0].kernel_size == (3, 3)
+    assert pool2d.input_conv[1].kernel_size == (1, 1)
+    # downsampling_core: depthwise + pointwise
+    assert pool2d.downsampling_core[0].groups == 32
+    assert pool2d.downsampling_core[1].kernel_size == (1, 1)
+    # output_conv: depthwise + pointwise
+    assert pool2d.output_conv[0].groups == 32 + 16
+    assert pool2d.output_conv[0].kernel_size == (3, 3)
+    assert pool2d.output_conv[1].kernel_size == (1, 1)
+
+    # 3. AdaptiveLearnedUnpool2d
+    unpool2d = AdaptiveLearnedUnpool2d(
+        in_features=64, intermediate_features=32, out_features=16, output_size=(28, 28)
+    )
+    # input_conv: depthwise + pointwise
+    assert unpool2d.input_conv[0].groups == 64
+    assert unpool2d.input_conv[0].kernel_size == (3, 3)
+    assert unpool2d.input_conv[1].kernel_size == (1, 1)
+    # upsampling_core: depthwise transposed + pointwise
+    assert unpool2d.upsampling_core[0].groups == 32
+    assert unpool2d.upsampling_core[1].kernel_size == (1, 1)
+    # output_conv: depthwise + pointwise
+    assert unpool2d.output_conv[0].groups == 32 + 64
+    assert unpool2d.output_conv[0].kernel_size == (3, 3)
+    assert unpool2d.output_conv[1].kernel_size == (1, 1)
+
+    # 4. CausalAdaptiveLearnedPool
+    cpool = CausalAdaptiveLearnedPool(
+        in_features=16, intermediate_features=32, out_features=64, output_size=4
+    )
+    # input_conv: depthwise causal + pointwise
+    assert cpool.input_conv[0].groups == 16
+    assert cpool.input_conv[0].kernel_size == 3
+    assert cpool.input_conv[1].kernel_size == (1,)
+    # downsampling_core: depthwise 1d + pointwise
+    assert cpool.downsampling_core[0].groups == 32
+    assert cpool.downsampling_core[1].kernel_size == (1,)
+    # output_conv: depthwise causal + pointwise
+    assert cpool.output_conv[0].groups == 32 + 16
+    assert cpool.output_conv[0].kernel_size == 3
+    assert cpool.output_conv[1].kernel_size == (1,)
+
+
+def test_mobilenet_parameter_efficiency() -> None:
+    # Verify parameter efficiency of depthwise-separable output conv vs dense conv
+    in_feat, inter_feat, out_feat = 64, 128, 256
+    pool2d = AdaptiveLearnedPool2d(
+        in_features=in_feat,
+        intermediate_features=inter_feat,
+        out_features=out_feat,
+        output_size=(7, 7),
+    )
+
+    dw_pw_params = sum(p.numel() for p in pool2d.output_conv.parameters())
+    # Standard dense conv: (inter_feat + in_feat) * out_feat * 3 * 3 + biases
+    dense_params = (inter_feat + in_feat) * out_feat * 9 + out_feat
+    assert dw_pw_params < dense_params
+    # Reduction is roughly a factor of 8-9x for the 3x3 stage
+    assert dw_pw_params < dense_params * 0.25

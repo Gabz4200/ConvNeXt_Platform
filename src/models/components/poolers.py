@@ -112,12 +112,27 @@ class LearnedWeightedGAP(nn.Module):
 
         padding = kernel_size // 2
 
-        self.weighter_conv = nn.Conv2d(
-            in_channels=in_features,
-            out_channels=num_output,
-            kernel_size=kernel_size,
-            padding=padding,
-        )
+        if kernel_size == 1:
+            self.weighter_conv = nn.Conv2d(
+                in_channels=in_features,
+                out_channels=num_output,
+                kernel_size=1,
+            )
+        else:
+            self.weighter_conv = nn.Sequential(
+                nn.Conv2d(
+                    in_channels=in_features,
+                    out_channels=in_features,
+                    kernel_size=kernel_size,
+                    padding=padding,
+                    groups=in_features,
+                ),
+                nn.Conv2d(
+                    in_channels=in_features,
+                    out_channels=num_output,
+                    kernel_size=1,
+                ),
+            )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         r"""Forward(x) -> Tensor.
@@ -283,12 +298,13 @@ class AdaptiveLearnedPool2d(nn.Module):
         self.output_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=intermediate_features + in_features,
-                out_channels=intermediate_features,
+                out_channels=intermediate_features + in_features,
                 kernel_size=3,
                 padding="same",
+                groups=intermediate_features + in_features,
             ),
             nn.Conv2d(
-                in_channels=intermediate_features,
+                in_channels=intermediate_features + in_features,
                 out_channels=out_features,
                 kernel_size=1,
                 padding="same",
@@ -559,12 +575,13 @@ class AdaptiveLearnedUnpool2d(nn.Module):
         self.output_conv = nn.Sequential(
             nn.Conv2d(
                 in_channels=intermediate_features + in_features,
-                out_channels=intermediate_features,
+                out_channels=intermediate_features + in_features,
                 kernel_size=3,
                 padding="same",
+                groups=intermediate_features + in_features,
             ),
             nn.Conv2d(
-                in_channels=intermediate_features,
+                in_channels=intermediate_features + in_features,
                 out_channels=out_features,
                 kernel_size=1,
                 padding="same",
@@ -966,11 +983,12 @@ class CausalAdaptiveLearnedPool(nn.Module):
         self.output_conv = nn.Sequential(
             CausalConv1d(
                 in_channels=intermediate_features + in_features,
-                out_channels=intermediate_features,
+                out_channels=intermediate_features + in_features,
                 kernel_size=3,
+                groups=intermediate_features + in_features,
             ),
             nn.Conv1d(
-                in_channels=intermediate_features,
+                in_channels=intermediate_features + in_features,
                 out_channels=out_features,
                 kernel_size=1,
             ),
