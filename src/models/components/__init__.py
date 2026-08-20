@@ -17,6 +17,7 @@ from src.models.components.poolers import (
     CausalConv1d,
     LearnedWeightedGAP,
 )
+from src.models.components.rwkv7 import RWKV7Block, RWKV7BlockState, RWKV7Model
 from src.models.components.simple_dense_net import SimpleDenseNet
 
 __all__ = [
@@ -30,6 +31,9 @@ __all__ = [
     "DropPath",
     "LayerNorm",
     "LearnedWeightedGAP",
+    "RWKV7Block",
+    "RWKV7BlockState",
+    "RWKV7Model",
     "SimpleDenseNet",
     "build_convnext",
     "convert_dinov3_state_dict",
