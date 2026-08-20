@@ -25,6 +25,8 @@ dependencies = [
     "torchao>=0.18.0",
     "matplotlib>=3.10.9",
     "einops>=0.8.2",
+    "pyarrow>=14.0.0",
+    "pandas>=2.0.0",
 ]
 
 [project.optional-dependencies]

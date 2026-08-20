@@ -31,7 +31,7 @@ class ConvNeXtRWKV7GamepadLitModule(LightningModule):
     def __init__(
         self,
         net: nn.Module,
-        optimizer: torch.optim.Optimizer | None = None,
+        optimizer: Any = None,
         scheduler: Any = None,
         compile: bool = False,
         joystick_loss_weight: float = 1.0,
