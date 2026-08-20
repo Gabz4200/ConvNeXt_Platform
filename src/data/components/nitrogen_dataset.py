@@ -11,6 +11,7 @@ import io
 import json
 import logging
 import math
+import random
 import tarfile
 from collections.abc import Iterator
 from typing import Any, cast
@@ -137,6 +138,8 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
     :param steps_per_sample: Number of temporal steps per chunk window. Default: 16.
     :param single_step: If True, each forward pass produces 1 Gamepad State instead of all 16,
         unrolling each 16-step sequence into 16 individual single-frame samples. Default: True.
+    :param shuffle: Whether to shuffle shards and maintain a streaming shuffle buffer. Default: True.
+    :param shuffle_buffer_size: Number of samples in the streaming reservoir shuffle buffer. Default: 1000.
     :param image_size: Target image resolution `(height, width)`. Default: (224, 224).
     :param val_ratio: Fraction of chunks reserved for validation when streaming. Default: 0.1.
     :param seed: Random seed for deterministic sample generation and splitting. Default: 42.
@@ -152,6 +155,8 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
         max_samples: int | None = None,
         steps_per_sample: int = 16,
         single_step: bool = True,
+        shuffle: bool = True,
+        shuffle_buffer_size: int = 1000,
         image_size: tuple[int, int] = (224, 224),
         val_ratio: float = 0.1,
         seed: int = 42,
@@ -164,6 +169,8 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
         self.max_samples = max_samples
         self.steps_per_sample = steps_per_sample
         self.single_step = single_step
+        self.shuffle = shuffle
+        self.shuffle_buffer_size = shuffle_buffer_size
         self.image_size = image_size
         self.val_ratio = val_ratio
         self.seed = seed
@@ -178,12 +185,15 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
 
     def _get_worker_shards(self) -> list[int]:
         """Partition shard indices across DataLoader multi-processing workers."""
+        shards = list(self.shards)
+        if self.shuffle and self.split == "train":
+            random.Random(self.seed).shuffle(shards)
         worker_info = get_worker_info()
         if worker_info is None:
-            return self.shards
+            return shards
         worker_id = worker_info.id
         num_workers = worker_info.num_workers
-        return [s for i, s in enumerate(self.shards) if i % num_workers == worker_id]
+        return [s for i, s in enumerate(shards) if i % num_workers == worker_id]
 
     def _is_chunk_in_split(self, chunk_idx: int) -> bool:
         """Deterministically determine if a chunk belongs to current split."""
@@ -278,10 +288,9 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
             action_t = target_window[step_i]
             yield img_t, action_t
 
-    def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:
-        """Iterate over dataset samples, unrolling 16-step windows into single steps if enabled."""
+    def _raw_samples(self) -> Iterator[tuple[Tensor, Tensor]]:
+        """Extract raw unbuffered samples across all worker shards."""
         worker_shards = self._get_worker_shards()
-        samples_yielded = 0
         chunk_idx = 0
 
         for shard_idx in worker_shards:
@@ -301,16 +310,9 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
                     target_window = actions[start_t:end_t]
 
                     if self.single_step:
-                        for sample in self._unroll_window_samples(
+                        yield from self._unroll_window_samples(
                             start_t, target_window, total_frames, meta
-                        ):
-                            yield sample
-                            samples_yielded += 1
-                            if (
-                                self.max_samples is not None
-                                and samples_yielded >= self.max_samples
-                            ):
-                                return
+                        )
                     else:
                         frames = torch.stack([
                             generate_synthetic_game_frame(
@@ -322,14 +324,41 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
                             )
                             for step_i in range(self.steps_per_sample)
                         ], dim=0)
-
                         yield frames, target_window
-                        samples_yielded += 1
-                        if (
-                            self.max_samples is not None
-                            and samples_yielded >= self.max_samples
-                        ):
-                            return
+
+    def __iter__(self) -> Iterator[tuple[Tensor, Tensor]]:
+        """Iterate over dataset samples with streaming shuffle buffer support."""
+        samples_yielded = 0
+        raw_iterator = self._raw_samples()
+
+        if not self.shuffle or self.shuffle_buffer_size <= 1:
+            for sample in raw_iterator:
+                yield sample
+                samples_yielded += 1
+                if self.max_samples is not None and samples_yielded >= self.max_samples:
+                    return
+            return
+
+        rng = random.Random(self.seed)
+        buffer: list[tuple[Tensor, Tensor]] = []
+
+        for sample in raw_iterator:
+            if len(buffer) < self.shuffle_buffer_size:
+                buffer.append(sample)
+            else:
+                idx = rng.randint(0, len(buffer) - 1)
+                yield buffer[idx]
+                buffer[idx] = sample
+                samples_yielded += 1
+                if self.max_samples is not None and samples_yielded >= self.max_samples:
+                    return
+
+        rng.shuffle(buffer)
+        for sample in buffer:
+            yield sample
+            samples_yielded += 1
+            if self.max_samples is not None and samples_yielded >= self.max_samples:
+                return
 
 
 __all__ = [

@@ -161,6 +161,46 @@ def test_nitrogen_dataset_max_samples_bound() -> None:
         assert len(samples) == 10
 
 
+def test_nitrogen_dataset_streaming_shuffle_buffer() -> None:
+    """Test streaming shuffle buffer randomly reorders stream items while preserving all samples."""
+    mock_parquet = create_mock_parquet_bytes(num_frames=64)
+    mock_actions = parse_parquet_gamepad_actions(mock_parquet)
+
+    with patch.object(
+        NitroGenDataset,
+        "_stream_shard_chunks",
+        return_value=[(mock_actions, None)],
+    ):
+        dataset_unshuffled = NitroGenDataset(
+            repo_id="nvidia/NitroGen",
+            shards=[0],
+            steps_per_sample=16,
+            single_step=True,
+            shuffle=False,
+            val_ratio=0.0,
+        )
+        dataset_shuffled = NitroGenDataset(
+            repo_id="nvidia/NitroGen",
+            shards=[0],
+            steps_per_sample=16,
+            single_step=True,
+            shuffle=True,
+            shuffle_buffer_size=16,
+            val_ratio=0.0,
+            seed=42,
+        )
+
+        unshuffled = list(dataset_unshuffled)
+        shuffled = list(dataset_shuffled)
+
+        assert len(unshuffled) == 64
+        assert len(shuffled) == 64
+        # Shuffled sequence should not be identical in order to unshuffled
+        unshuffled_actions = torch.stack([a for _, a in unshuffled])
+        shuffled_actions = torch.stack([a for _, a in shuffled])
+        assert not torch.equal(unshuffled_actions, shuffled_actions)
+
+
 def test_nitrogen_datamodule_dataloaders() -> None:
     """Test NitroGenDataModule setup and DataLoader iteration."""
     mock_parquet = create_mock_parquet_bytes(num_frames=32)

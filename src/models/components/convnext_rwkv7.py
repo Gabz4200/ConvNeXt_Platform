@@ -28,25 +28,6 @@ class GamepadStreamingState(NamedTuple):
 
 
 class _InputNormalize(nn.Module):
-    """Apply ImageNet normalization to input images in [0, 1] or [0, 255] range."""
-
-    def __init__(
-        self,
-        mean: tuple[float, float, float] = (0.485, 0.456, 0.406),
-        std: tuple[float, float, float] = (0.229, 0.224, 0.225),
-    ) -> None:
-        super().__init__()
-        self.register_buffer("mean", torch.tensor(mean).view(1, 3, 1, 1))
-        self.register_buffer("std", torch.tensor(std).view(1, 3, 1, 1))
-
-    def forward(self, x: Tensor) -> Tensor:
-        x = x.float()
-        if x.max() > 1.0:
-            x = x / 255.0
-        return (x - self.mean) / self.std
-
-
-class _InputNormalize(nn.Module):
     """Apply DINOv3-standard ImageNet normalization to raw image inputs.
 
     Mirrors the preprocessing pipeline in DINOv3's ``DINOv3ViTImageProcessorFast``:
@@ -56,6 +37,9 @@ class _InputNormalize(nn.Module):
     :param mean: Per-channel normalization mean. Default: (0.485, 0.456, 0.406).
     :param std: Per-channel normalization standard deviation. Default: (0.229, 0.224, 0.225).
     """
+
+    mean: Tensor
+    std: Tensor
 
     def __init__(
         self,

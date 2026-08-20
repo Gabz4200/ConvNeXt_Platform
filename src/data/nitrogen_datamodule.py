@@ -30,6 +30,8 @@ class NitroGenDataModule(LightningDataModule):
     :param steps_per_sample: Number of temporal steps per chunk window. Default: 16.
     :param single_step: If True, each forward pass produces 1 Gamepad State, unrolling 16 steps
         into 16 samples. Default: True.
+    :param shuffle: Whether to shuffle shards and maintain a streaming shuffle buffer. Default: True.
+    :param shuffle_buffer_size: Size of streaming reservoir shuffle buffer. Default: 1000.
     :param shards: Optional list of integer shard indices to stream. Default: None.
     :param max_shards: Maximum number of shards to process. Default: None.
     :param max_chunks_per_shard: Maximum chunks to read per shard. Default: None.
@@ -49,6 +51,8 @@ class NitroGenDataModule(LightningDataModule):
         test_samples: int = 100,
         steps_per_sample: int = 16,
         single_step: bool = True,
+        shuffle: bool = True,
+        shuffle_buffer_size: int = 1000,
         shards: list[int] | None = None,
         max_shards: int | None = None,
         max_chunks_per_shard: int | None = None,
@@ -92,6 +96,8 @@ class NitroGenDataModule(LightningDataModule):
                 max_samples=self.hparams.max_samples,
                 steps_per_sample=self.hparams.steps_per_sample,
                 single_step=self.hparams.single_step,
+                shuffle=self.hparams.shuffle,
+                shuffle_buffer_size=self.hparams.shuffle_buffer_size,
                 image_size=self.hparams.image_size,
                 val_ratio=self.hparams.val_ratio,
                 seed=self.hparams.seed,
@@ -105,6 +111,8 @@ class NitroGenDataModule(LightningDataModule):
                 max_samples=self.hparams.val_samples,
                 steps_per_sample=self.hparams.steps_per_sample,
                 single_step=self.hparams.single_step,
+                shuffle=False,
+                shuffle_buffer_size=0,
                 image_size=self.hparams.image_size,
                 val_ratio=self.hparams.val_ratio,
                 seed=self.hparams.seed + 1,
@@ -120,6 +128,8 @@ class NitroGenDataModule(LightningDataModule):
                 max_samples=self.hparams.test_samples,
                 steps_per_sample=self.hparams.steps_per_sample,
                 single_step=self.hparams.single_step,
+                shuffle=False,
+                shuffle_buffer_size=0,
                 image_size=self.hparams.image_size,
                 val_ratio=self.hparams.val_ratio,
                 seed=self.hparams.seed + 2,
