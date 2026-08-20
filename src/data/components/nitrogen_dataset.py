@@ -74,8 +74,10 @@ def generate_synthetic_game_frame(
 ) -> Tensor:
     """Generate a structured synthetic game frame when raw video is not downloaded locally.
 
-    Produces normalized float32 tensor of shape `(3, H, W)` with gameplay visual textures,
+    Produces float32 tensor of shape `(3, H, W)` with gameplay visual textures,
     game area bounds, and controller overlay positions derived from chunk metadata.
+    Output is in raw [0, 1] range; normalization is applied by the model's
+    `_InputNormalize` layer to match DINOv3's DINOv3ViTImageProcessorFast.
 
     **Note:** The phase offset uses `(seed % 100)`, so visual patterns repeat every 100 frames.
     This is intended only for local testing; replace with real decoded video frames or a learned
@@ -86,7 +88,7 @@ def generate_synthetic_game_frame(
     :param meta: Parsed metadata dict from metadata.json, if available.
     :param image_size: Target `(height, width)` tuple. Default: (224, 224).
     :param seed: Random seed for visual feature consistency. Default: 42.
-    :return: Normalized image tensor of shape `(3, H, W)` in ImageNet color space.
+    :return: Raw image tensor of shape `(3, H, W)` in [0, 1] range.
     """
     height, width = image_size
     t_ratio = frame_idx / max(total_frames, 1)
@@ -113,9 +115,7 @@ def generate_synthetic_game_frame(
 
     frame = torch.stack([channel_r, channel_g, channel_b], dim=0)
 
-    mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
-    std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
-    return (frame - mean) / std
+    return frame.clamp(0.0, 1.0)
 
 
 class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
