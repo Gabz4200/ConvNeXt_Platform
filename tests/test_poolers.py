@@ -1,4 +1,6 @@
-"""Tests for spatial pooling and unpooling neural network components."""
+"""Tests for spatial and temporal pooling and unpooling neural network components."""
+
+from typing import Any
 
 import pytest
 import torch
@@ -7,6 +9,9 @@ import torch.nn.functional as F
 from src.models.components.poolers import (
     AdaptiveLearnedPool2d,
     AdaptiveLearnedUnpool2d,
+    CausalAdaptiveLearnedPool,
+    CausalAdaptiveLearnedPool1d,
+    CausalConv1d,
     LearnedWeightedGAP,
 )
 
@@ -444,3 +449,376 @@ def test_adaptive_learned_unpool_invalid_output_size(
 ) -> None:
     with pytest.raises(ValueError, match="output_size dimensions must be positive"):
         _make_adaptive_unpooler(output_size=output_size)
+
+
+def test_causal_conv1d_shapes() -> None:
+    conv = CausalConv1d(in_channels=8, out_channels=16, kernel_size=3, stride=1)
+    x = torch.randn(2, 8, 10)
+    out = conv(x)
+    assert out.shape == (2, 16, 10)
+
+    # Strided
+    conv_strided = CausalConv1d(in_channels=8, out_channels=16, kernel_size=2, stride=2)
+    out_strided = conv_strided(x)
+    assert out_strided.shape == (2, 16, 5)
+
+
+def test_causal_conv1d_gradient_causality() -> None:
+    conv = CausalConv1d(in_channels=4, out_channels=4, kernel_size=3, stride=1)
+    x = torch.randn(1, 4, 8, requires_grad=True)
+    out = conv(x)
+
+    for t_out in range(8):
+        grad_x = torch.autograd.grad(out[0, 0, t_out], x, retain_graph=True)[0]
+        future_grads = grad_x[0, :, t_out + 1 :]
+        if future_grads.numel() > 0:
+            assert future_grads.abs().max().item() == 0.0
+
+
+def test_causal_conv1d_streaming_equivalence() -> None:
+    conv = CausalConv1d(in_channels=4, out_channels=8, kernel_size=3, stride=1)
+    x = torch.randn(2, 4, 10)
+    full_out = conv(x)
+
+    state = None
+    stream_outs = []
+    for t in range(10):
+        x_t = x[:, :, t : t + 1]
+        out_t, state = conv.step(x_t, state)
+        stream_outs.append(out_t)
+
+    stream_out = torch.cat(stream_outs, dim=-1)
+    torch.testing.assert_close(full_out, stream_out)
+
+
+def _make_causal_pooler(
+    in_features: int = 32,
+    intermediate_features: int = 16,
+    out_features: int = 8,
+    output_size: int | tuple[int, ...] = 4,
+) -> CausalAdaptiveLearnedPool:
+    return CausalAdaptiveLearnedPool(
+        in_features=in_features,
+        intermediate_features=intermediate_features,
+        out_features=out_features,
+        output_size=output_size,
+    )
+
+
+@pytest.mark.parametrize(
+    ("input_t", "output_t"),
+    [
+        (16, 4),
+        (17, 4),
+        (3, 4),
+        (33, 8),
+        (64, 12),
+        (20, 7),
+        (16, 1),
+        (1, 1),
+    ],
+)
+def test_causal_adaptive_pool_3d_output_shape(input_t: int, output_t: int) -> None:
+    batch_size = 2
+    in_features = 32
+    out_features = 8
+
+    pooler = _make_causal_pooler(
+        in_features=in_features,
+        intermediate_features=16,
+        out_features=out_features,
+        output_size=output_t,
+    )
+    x = torch.randn(batch_size, in_features, input_t)
+    out = pooler(x)
+
+    assert out.shape == (batch_size, out_features, output_t)
+
+
+@pytest.mark.parametrize(
+    ("input_t", "output_t", "spatial_size"),
+    [
+        (16, 4, (8, 8)),
+        (17, 4, (7, 7)),
+        (3, 4, (4, 4)),
+        (20, 7, (6, 6)),
+        (8, 2, (10, 10)),
+    ],
+)
+def test_causal_adaptive_pool_5d_video_shape(
+    input_t: int, output_t: int, spatial_size: tuple[int, int]
+) -> None:
+    batch_size = 2
+    in_features = 16
+    out_features = 8
+
+    pooler = _make_causal_pooler(
+        in_features=in_features,
+        intermediate_features=16,
+        out_features=out_features,
+        output_size=output_t,
+    )
+    x = torch.randn(batch_size, in_features, input_t, *spatial_size)
+    out = pooler(x)
+
+    assert out.shape == (batch_size, out_features, output_t, *spatial_size)
+
+
+@pytest.mark.parametrize(
+    ("in_features", "intermediate_features"),
+    [(8, 64), (32, 32), (64, 8), (16, 48)],
+)
+def test_causal_adaptive_pool_arbitrary_channels(
+    in_features: int, intermediate_features: int
+) -> None:
+    pooler = _make_causal_pooler(
+        in_features=in_features,
+        intermediate_features=intermediate_features,
+        output_size=4,
+    )
+    x = torch.randn(2, in_features, 16)
+    out = pooler(x)
+
+    assert out.shape == (2, 8, 4)
+
+
+def test_causal_adaptive_pool_gradient_flow() -> None:
+    pooler = _make_causal_pooler(in_features=16, intermediate_features=16, output_size=4)
+    x = torch.randn(2, 16, 8, requires_grad=True)
+
+    out = pooler(x)
+    out.sum().backward()
+
+    assert x.grad is not None
+    assert x.grad.shape == x.shape
+    assert all(param.grad is not None for param in pooler.parameters())
+
+
+@pytest.mark.parametrize(
+    ("input_t", "output_t"),
+    [
+        (16, 4),
+        (20, 5),
+        (17, 4),
+        (8, 2),
+    ],
+)
+def test_causal_adaptive_pool_causality_strict_gradient(input_t: int, output_t: int) -> None:
+    pooler = _make_causal_pooler(
+        in_features=8,
+        intermediate_features=16,
+        out_features=4,
+        output_size=output_t,
+    )
+    x = torch.randn(1, 8, input_t, requires_grad=True)
+    out = pooler(x)
+
+    for t_out in range(output_t):
+        grad_x = torch.autograd.grad(out[0, 0, t_out], x, retain_graph=True)[0]
+        if t_out < output_t - 2:
+            assert grad_x[0, :, input_t - 1].abs().max().item() == 0.0
+
+
+def test_causal_adaptive_pool_streaming_step_3d() -> None:
+    pooler = _make_causal_pooler(
+        in_features=8, intermediate_features=16, out_features=4, output_size=4
+    )
+    state = pooler.init_streaming_state(batch_size=2, channels=8, buffer_size=16)
+
+    for _ in range(10):
+        frame = torch.randn(2, 8, 1)
+        out, state = pooler.streaming_step(frame, state)
+        assert out.shape == (2, 4, 4)
+        assert state["buffer"].shape == (2, 8, 16)
+
+
+def test_causal_adaptive_pool_streaming_step_5d() -> None:
+    pooler = _make_causal_pooler(
+        in_features=8, intermediate_features=16, out_features=4, output_size=4
+    )
+    state = pooler.init_streaming_state(
+        batch_size=2, channels=8, spatial_shape=(4, 4), buffer_size=16
+    )
+
+    for _ in range(5):
+        frame = torch.randn(2, 8, 1, 4, 4)
+        out, state = pooler.streaming_step(frame, state)
+        assert out.shape == (2, 4, 4, 4, 4)
+        assert state["buffer"].shape == (2, 8, 16, 4, 4)
+
+
+def test_causal_adaptive_pool_streaming_auto_init() -> None:
+    pooler = _make_causal_pooler(
+        in_features=8, intermediate_features=16, out_features=4, output_size=4
+    )
+    frame = torch.randn(2, 8, 1)
+    out, state = pooler.streaming_step(frame, None)
+    assert out.shape == (2, 4, 4)
+    assert state is not None
+    assert state["buffer"].shape == (2, 8, 16)
+
+
+def test_causal_adaptive_pool_tuple_output_size() -> None:
+    pooler = _make_causal_pooler(output_size=(4,))
+    assert pooler.output_size == 4
+    x = torch.randn(2, 32, 16)
+    out = pooler(x)
+    assert out.shape == (2, 8, 4)
+
+
+@pytest.mark.parametrize("output_size", [0, -1, (0,), (-2,), (4, 4)])
+def test_causal_adaptive_pool_invalid_output_size(output_size: Any) -> None:
+    with pytest.raises(ValueError, match="output_size"):
+        _make_causal_pooler(output_size=output_size)
+
+
+def test_causal_adaptive_pool_invalid_input_dim() -> None:
+    pooler = _make_causal_pooler()
+    x_2d = torch.randn(2, 32)
+    with pytest.raises(ValueError, match="Expected tensor with at least 3 dimensions"):
+        pooler(x_2d)
+
+
+def test_causal_adaptive_pool_pad_to_nearest_multiple() -> None:
+    pooler = _make_causal_pooler()
+    x = torch.randn(2, 3, 10)
+    padded = pooler._pad_to_nearest_multiple(x, 4)
+    assert padded.shape == (2, 3, 12)
+    # Check left-only padding: original x should match right slice
+    torch.testing.assert_close(padded[..., 2:], x)
+
+    # When already multiple, returns identical tensor
+    x_mult = torch.randn(2, 3, 12)
+    assert pooler._pad_to_nearest_multiple(x_mult, 4) is x_mult
+
+
+def test_causal_adaptive_pool_bounded_downsamples() -> None:
+    pooler = _make_causal_pooler(output_size=4)
+    assert pooler._bounded_num_downsamples(16) == 2
+    assert pooler._bounded_num_downsamples(4) == 0
+    assert pooler._bounded_num_downsamples(3) == 0
+
+
+def test_causal_adaptive_pool_unpadded_input_avg() -> None:
+    pooler = _make_causal_pooler(
+        in_features=8,
+        intermediate_features=16,
+        out_features=8,
+        output_size=4,
+    )
+    captured_pooled = []
+
+    def hook(
+        module: torch.nn.Module,
+        inputs: tuple[torch.Tensor, ...],
+        output: torch.Tensor,
+    ) -> None:
+        captured_pooled.append(inputs[0])
+
+    hook_handle = pooler.output_conv.register_forward_hook(hook)
+
+    # 7 length input requires padding to 8 for strided convolutions
+    x = torch.ones(2, 8, 7)
+    _ = pooler(x)
+    hook_handle.remove()
+
+    assert len(captured_pooled) == 1
+    input_avg = captured_pooled[0][:, :8, :]
+    expected_avg = F.adaptive_avg_pool1d(x, 4)
+    torch.testing.assert_close(input_avg, expected_avg)
+    torch.testing.assert_close(input_avg, torch.ones_like(input_avg))
+
+
+def test_causal_adaptive_pool1d_alias() -> None:
+    assert CausalAdaptiveLearnedPool1d is CausalAdaptiveLearnedPool
+
+
+def test_poolers_get_config_and_extra_repr() -> None:
+    # AdaptiveLearnedPool2d
+    pool2d = AdaptiveLearnedPool2d(
+        in_features=32, intermediate_features=16, out_features=8, output_size=(4, 4)
+    )
+    assert pool2d.get_config() == {
+        "in_features": 32,
+        "intermediate_features": 16,
+        "out_features": 8,
+        "output_size": (4, 4),
+    }
+    assert "in_features=32" in pool2d.extra_repr()
+
+    # AdaptiveLearnedUnpool2d
+    unpool2d = AdaptiveLearnedUnpool2d(
+        in_features=8, intermediate_features=16, out_features=32, output_size=(16, 16)
+    )
+    assert unpool2d.get_config() == {
+        "in_features": 8,
+        "intermediate_features": 16,
+        "out_features": 32,
+        "output_size": (16, 16),
+    }
+    assert "in_features=8" in unpool2d.extra_repr()
+
+    # CausalConv1d
+    conv1d = CausalConv1d(in_channels=8, out_channels=16, kernel_size=3, stride=1, dilation=2)
+    assert conv1d.get_config() == {
+        "in_channels": 8,
+        "out_channels": 16,
+        "kernel_size": 3,
+        "stride": 1,
+        "dilation": 2,
+        "groups": 1,
+        "bias": True,
+    }
+    assert "in_channels=8" in conv1d.extra_repr()
+    assert "padding=4" in conv1d.extra_repr()
+
+    # CausalAdaptiveLearnedPool
+    cpool = CausalAdaptiveLearnedPool(
+        in_features=16, intermediate_features=32, out_features=8, output_size=4, temporal_dim=1
+    )
+    assert cpool.get_config() == {
+        "in_features": 16,
+        "intermediate_features": 32,
+        "out_features": 8,
+        "output_size": 4,
+        "temporal_dim": 1,
+    }
+    assert "in_features=16" in cpool.extra_repr()
+    assert "temporal_dim=1" in cpool.extra_repr()
+
+
+def test_causal_adaptive_pool_custom_temporal_dim_3d() -> None:
+    # Input format (B, T, C) with temporal_dim=1
+    pooler = CausalAdaptiveLearnedPool(
+        in_features=16, intermediate_features=32, out_features=8, output_size=4, temporal_dim=1
+    )
+    x_btc = torch.randn(2, 10, 16)
+    out_btc = pooler(x_btc)
+    assert out_btc.shape == (2, 4, 8)
+
+    # Input format (B, C, T) with negative temporal_dim=-1
+    pooler_neg = CausalAdaptiveLearnedPool(
+        in_features=16, intermediate_features=32, out_features=8, output_size=4, temporal_dim=-1
+    )
+    x_bct = torch.randn(2, 16, 10)
+    out_bct = pooler_neg(x_bct)
+    assert out_bct.shape == (2, 8, 4)
+
+
+def test_causal_adaptive_pool_custom_temporal_dim_5d() -> None:
+    # 5D input with temporal_dim=1 (B, T, C, H, W)
+    pooler = CausalAdaptiveLearnedPool(
+        in_features=16, intermediate_features=32, out_features=8, output_size=4, temporal_dim=1
+    )
+    x_btchw = torch.randn(2, 10, 16, 6, 6)
+    out_btchw = pooler(x_btchw)
+    assert out_btchw.shape == (2, 4, 8, 6, 6)
+
+
+def test_causal_adaptive_pool_invalid_temporal_dim() -> None:
+    pooler = CausalAdaptiveLearnedPool(
+        in_features=8, intermediate_features=16, out_features=4, output_size=4, temporal_dim=5
+    )
+    x_3d = torch.randn(2, 8, 10)
+    with pytest.raises(IndexError, match="temporal_dim 5 out of bounds"):
+        pooler(x_3d)
