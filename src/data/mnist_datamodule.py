@@ -89,7 +89,7 @@ class MNISTDataModule(LightningDataModule):
             self.data_train, self.data_val, self.data_test = random_split(
                 dataset=dataset,
                 lengths=self.hparams.train_val_test_split,
-                generator=torch.Generator().manual_seed(42),
+                generator=torch.Generator().manual_seed(3407),
             )
 
     def train_dataloader(self) -> DataLoader[Any]:

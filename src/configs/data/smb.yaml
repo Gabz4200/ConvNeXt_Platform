@@ -11,4 +11,4 @@ image_size: [224, 224]
 target_mode: gamepad_21
 num_workers: 0
 pin_memory: false
-seed: 42
+seed: 3407

@@ -138,7 +138,7 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
     :param shuffle_buffer_size: Number of samples in the streaming reservoir shuffle buffer. Default: 1000.
     :param image_size: Target image resolution `(height, width)`. Default: (224, 224).
     :param val_ratio: Fraction of chunks reserved for validation when streaming. Default: 0.1.
-    :param seed: Random seed for deterministic sample generation and splitting. Default: 42.
+    :param seed: Random seed for deterministic sample generation and splitting. Default: 3407.
     """
 
     def __init__(
@@ -156,7 +156,7 @@ class NitroGenDataset(IterableDataset[tuple[Tensor, Tensor]]):
         shuffle_buffer_size: int = 1000,
         image_size: tuple[int, int] = (224, 224),
         val_ratio: float = 0.1,
-        seed: int = 42,
+        seed: int = 3407,
     ) -> None:
         super().__init__()
         if not video_dir:

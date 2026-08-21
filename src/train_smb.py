@@ -76,7 +76,7 @@ def train(
     devices: int | str = 1,
     precision: Any = "32-true",
     fast_dev_run: bool | int = False,
-    seed: int | None = 42,
+    seed: int | None = 3407,
     ckpt_path: str | None = None,
     logger_type: str | None = "csv",
     log_dir: str = "logs",
@@ -128,7 +128,7 @@ def train(
     :param devices: Device count or IDs. Default: 1.
     :param precision: Precision mode ('32-true', '16-mixed'). Default: '32-true'.
     :param fast_dev_run: Run 1 batch for quick test. Default: False.
-    :param seed: Random seed. Default: 42.
+    :param seed: Random seed. Default: 3407.
     :param ckpt_path: Checkpoint to resume from. Default: None.
     :param logger_type: Logger type ('csv', 'tensorboard', or None). Default: 'csv'.
     :param log_dir: Base directory for logs. Default: 'logs'.

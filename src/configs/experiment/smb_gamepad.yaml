@@ -13,7 +13,7 @@ defaults:
 
 tags: ["smb", "super_mario_bros", "gamepad", "convnext_rwkv7"]
 
-seed: 42
+seed: 3407
 
 trainer:
   min_epochs: 1

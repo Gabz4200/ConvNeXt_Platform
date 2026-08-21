@@ -100,7 +100,7 @@ class SMBDataset(Dataset[tuple[Tensor, Tensor]]):
     :param max_samples: Optional maximum number of samples to load. Default: None.
     :param image_size: Target image resolution `(height, width)`. Default: (224, 224).
     :param target_mode: 'gamepad_21' (standard 21-D target) or 'nes_8' (raw 8-D target). Default: 'gamepad_21'.
-    :param seed: Random seed for deterministic train/val/test splits. Default: 42.
+    :param seed: Random seed for deterministic train/val/test splits. Default: 3407.
     """
 
     def __init__(
@@ -115,7 +115,7 @@ class SMBDataset(Dataset[tuple[Tensor, Tensor]]):
         max_samples: int | None = None,
         image_size: tuple[int, int] = (224, 224),
         target_mode: str = "gamepad_21",
-        seed: int = 42,
+        seed: int = 3407,
     ) -> None:
         super().__init__()
         self.data_dir = Path(data_dir)

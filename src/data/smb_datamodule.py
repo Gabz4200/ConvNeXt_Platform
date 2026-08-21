@@ -29,7 +29,7 @@ class SMBDataModule(LightningDataModule):
     :param target_mode: 'gamepad_21' or 'nes_8'. Default: 'gamepad_21'.
     :param num_workers: Number of DataLoader subprocesses. Default: 0.
     :param pin_memory: Whether to copy Tensors into CUDA pinned memory. Default: False.
-    :param seed: Random seed for deterministic train/val/test splits. Default: 42.
+    :param seed: Random seed for deterministic train/val/test splits. Default: 3407.
     """
 
     def __init__(
@@ -46,7 +46,7 @@ class SMBDataModule(LightningDataModule):
         target_mode: str = "gamepad_21",
         num_workers: int = 0,
         pin_memory: bool = False,
-        seed: int = 42,
+        seed: int = 3407,
     ) -> None:
         super().__init__()
         self.save_hyperparameters(logger=False)

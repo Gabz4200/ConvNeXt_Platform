@@ -104,7 +104,7 @@ class CIFAR10DataModule(LightningDataModule):
 
         split = raw["train"].train_test_split(
             test_size=self.hparams["val_size"],
-            seed=42,
+            seed=3407,
             shuffle=True,
         )
 
