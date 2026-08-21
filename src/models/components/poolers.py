@@ -931,9 +931,9 @@ class CausalAdaptiveLearnedPool(nn.Module):
                 raise ValueError(
                     f"output_size for temporal pooler must be an integer or 1-tuple, got {output_size}."
                 )
-            out_t = int(output_size[0])
+            out_t = output_size[0]
         else:
-            out_t = int(output_size)
+            out_t = output_size
 
         if out_t < 1:
             raise ValueError(f"output_size dimensions must be positive, got {output_size}.")
